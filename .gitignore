@@ -1,0 +1,29 @@
+# Local-only: Claude / editors / OS
+CLAUDE.md
+.claude/
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+
+# Secrets and local runtime data (the app is zero-config by design;
+# none of these should ever exist in the tree — belt and suspenders)
+.env
+.env.*
+*.pem
+*.key
+*.db
+*.sqlite
+*.sqlite3
+
+# Go build artifacts
+/llamaman
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Frontend
+node_modules/
