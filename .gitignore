@@ -12,6 +12,14 @@ CLAUDE.md
 .env.*
 *.pem
 *.key
+# Exception: the ed25519 release-signing public key(s) — current and "next",
+# for rotation — are committed on purpose and compiled into the binary
+# (DESIGN section 12 / section 16.2 step 3). Name any such file with a .pub
+# extension, which the *.pem/*.key patterns above do not match; if one ever
+# needs a .pem/.key name for tooling compatibility, negate it explicitly
+# right here, e.g.:
+# !release-key.pem
+# !release-key-next.pem
 *.db
 *.sqlite
 *.sqlite3
@@ -27,3 +35,10 @@ coverage.*
 
 # Frontend
 node_modules/
+/ui/dist/
+
+# The embed target. `make ui` fills this from ui/dist; only the placeholder
+# index.html is committed, so `go build ./...` works on a clean checkout
+# without a Node toolchain (DESIGN section 16.1).
+/internal/web/dist/*
+!/internal/web/dist/index.html

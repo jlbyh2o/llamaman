@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.27.0'
+  NODE_VERSION: '24'
+
+# TODO(DESIGN section 16.2 / section 15): the jobs below are what exists today.
+# Still to come, each with the code it exercises:
+#   lint            — the full `make lint` set once gofumpt, staticcheck,
+#                     golangci-lint, govulncheck and shellcheck are wired
+#   openapi-drift   — `make openapi && git diff --exit-code`
+#   build           — `make build-all`, uploading linux/amd64 + linux/arm64
+#   cuda-configure  — nvidia/cuda devel container, pinned llama.cpp, time-boxed
+#                     partial compile
+#   systemd-user    — dbus-run-session + systemd --user: the D-Bus control-plane
+#                     suite and the D2 topology assertions (D47)
+#   install-system  — ubuntu-24.04, real install.sh, three matrix legs
+#                     (default, --prefix, --dedicated-user)
+#   no-systemd      — no PID 1 manager: degraded start, 409 systemd_unavailable
+#   e2e             — Playwright on main, tags or a label
+#
+# Also still to come, and not just jobs within this file: two whole sibling
+# workflow files that DESIGN section 16.2 specifies in detail and that do not
+# exist yet —
+#   release.yml — the tag-triggered (`v*`) release pipeline: re-run lint/
+#                 test-go/test-ui/build, produce the linux/amd64 and
+#                 linux/arm64 tarballs, sign checksums.txt with the ed25519
+#                 release key and commit its public + "next" key, publish
+#                 release notes and artifacts, and a post-publish job that
+#                 installs the published tarball via the published install.sh
+#                 and asserts /healthz
+#   nightly.yml — re-resolves the live llama.cpp stable/nightly tags, asserts
+#                 the asset names and nightly-tag.txt still parse, and re-runs
+#                 the published install.sh against the newest release
+#
+# And within the two jobs below that already exist, two requirements from the
+# section 16.2 table are missing without being called out here:
+#   test-go — no `-coverprofile`, no coverage gate, no coverage artifact upload
+#   test-ui — no `npm run test -- --coverage`, no bundle-size budget check
+
+jobs:
+  test-go:
+    name: Go vet, build, test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Verify formatting
+        run: |
+          unformatted="$(gofmt -l ./cmd ./internal)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      # Builds against the committed internal/web/dist/index.html placeholder,
+      # which is what proves a clean checkout compiles without a Node toolchain
+      # (DESIGN section 16.1).
+      - name: go build
+        run: CGO_ENABLED=0 go build ./...
+
+      - name: go test
+        run: go test -race ./...
+
+  test-ui:
+    name: UI typecheck and build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build

@@ -70,7 +70,7 @@ Numbering is append-only: a gap is a decision this design later **removed**, and
 | D42 | State machine helper | No generic `Apply(entity, event)` engine — transition tables stay as documentation plus SQL `CHECK`s, and each service method performs its own guarded transition | Eight hand-written guards are less machinery than an engine plus a generated reachability test. |
 | D43 | API contract enforcement | `openapi.json` generated from the route registry, drift-checked in CI, **and** a response-conformance middleware enabled in integration tests | The drift check proves the document matches the routes; the middleware proves the handlers match the document. |
 | D44 | Charts | uPlot (canvas, ~45 KB); comparison bars are hand-rolled SVG | A 512-point sweep is thousands of points; a React-component chart library stalls. |
-| D45 | Frontend stack | React 18 + TypeScript 5 + Vite 6, per SPEC §5.4 assumption 4 — no version veto exercised | The veto window is the user's, not the design's. |
+| D45 | Frontend stack | React 19 + TypeScript 7 + Vite 8 — veto exercised: the owner's post-spec "build on latest stable" directive supersedes SPEC §5.4 assumption 4's original React 18 + Vite 6 default; majors resolved by live registry query at implementation time | The veto window is the user's, and the latest-stable directive is that veto being exercised. |
 | D46 | Secrets at rest | HF token sealed with AES-GCM under `secret.key` (0600) inside the 0600 DB | Defends the artifacts we ourselves create — `db-backups/`, diagnostics bundles, user backups — not host compromise; that limit is stated rather than implied. |
 | D47 | CI systemd | `systemd --user` inside `dbus-run-session` on a stock GitHub runner for the D-Bus suite, plus one `ubuntu-24.04` job that installs system-scope units via `install.sh` | Exercises the identical `StartUnit`/`JobRemoved`/`EnableUnitFiles` paths per-PR with no privileged container, keeping SPEC §1's no-Docker posture clean even in CI. |
 | D48 | `install.sh` shape | Whole script wrapped in `main "$@"` invoked on the last line; artifacts fetched through `releases/latest/download/`; units and polkit files written by `llamaman install-units` | Defeats the truncated-`curl \| sh` partial-pipe hazard, dodges the 60/hour anonymous API limit, and gives the F16 repair path for free. |
@@ -201,11 +201,18 @@ github.com/jlbyh2o/llamaman
 
 **Subcommands** (`cmd/llamaman`) — this list is authoritative; every unit file's `ExecStart` names
 one of them and a CI test asserts that correspondence: `serve`, `status`, `doctor`, `diagnostics`,
-`reset-password`, `install-units`, `instance-exec`, `selfupdate-apply`, `update-verify`,
-`verify-release`, `version`.
+`reset-password`, `restore-db`, `install-units`, `instance-exec`, `selfupdate-apply`,
+`update-verify`, `verify-release`, `version` — **twelve**, and `restore-db` is one of them because
+D14, D90, D94 and §12.4 all name `llamaman restore-db <snapshot>` as a real subcommand a human runs.
 `instance-exec`, `selfupdate-apply` and `update-verify` are unit-only entry points: they refuse to
 run from an interactive TTY without `--force`, and say so in their help text. (`selfupdate-apply` is
-the root oneshot of §12; `update-verify` is the revert of §12.2, and `restore-db` is §12.4's.)
+the root oneshot of §12; `update-verify` is the revert of §12.2. `restore-db` is §12.4's, and is the
+opposite kind: never started by a unit, only ever typed by an operator with the daemon stopped.)
+
+Each command's `run` func returns an error, and `main` maps it to a process exit status. That
+mapping is not "non-nil → 1": §5.6's launcher exit codes (64, 65, 69, 70, 72, 75, 78) are read back
+into `instance_starts.exit_code` and drive the supervisor's restart policy, so a command that must
+exit with a specific status returns a `cli.ExitError` carrying it and `main` unwraps that code.
 
 ---
 
@@ -2168,7 +2175,7 @@ so SDKs surface a sensible message.
 
 | Choice | Rationale |
 |---|---|
-| **Vite 6 + React 18 + TypeScript 5 (strict)** | SPEC §5.4 assumption 4, not vetoed (D45). Output is plain static assets for `go:embed`. |
+| **Vite 8 + React 19 + TypeScript 7 (strict)** | SPEC §5.4 assumption 4, superseded by the owner's latest-stable directive (D45). Output is plain static assets for `go:embed`. |
 | **TanStack Router (code-based routes)** | Type-safe params *and* search params: filters, sort and comparison selections live in the URL, which is what a technical tool needs (shareable links, working back button). |
 | **TanStack Query** for all server state | Every screen is a projection of DB rows; Query gives caching, background refresh, and a cache that SSE frames can *patch* instead of polling. |
 | **Zustand** for the sliver of client state | Wizard scratch state, theme, unsaved instance-form drafts. Deliberately tiny. |
@@ -5965,7 +5972,7 @@ prints the failing line.
 Notably **absent**: `github.com/ebitengine/purego` (D16 — NVML via `dlopen` is untestable ABI risk in
 a statically linked binary), a web framework (stdlib `ServeMux` with Go 1.22+ patterns plus ~150
 lines of middleware is enough), an ORM (hand-written SQL against a schema this central is clearer,
-and `sqlc` remains a reasonable build-time-only addition later), `cobra` (ten subcommands; `flag`
+and `sqlc` remains a reasonable build-time-only addition later), `cobra` (twelve subcommands; `flag`
 suffices), a migration library (a ~120-line runner over embedded SQL has no failure modes we do not
 want to own), `gguf-parser-go` (the HTTP-Range capability we need does not exist there — §8.5), a
 minisign library (ed25519 verification of a checksums file is ~40 lines against stdlib), `creack/pty`
@@ -5976,8 +5983,8 @@ the module graph small).
 
 | Package | Why |
 |---|---|
-| `react`, `react-dom` (18) | SPEC §5.4. |
-| `typescript` (5.x), `vite` (6.x), `@vitejs/plugin-react` | Build tooling per SPEC §5.4. Day-one majors of the compiler or the bundler are explicitly not chased. |
+| `react`, `react-dom` (19) | SPEC §5.4, current stable major per the owner's latest-stable directive (D45). |
+| `typescript` (7.x), `vite` (8.x), `@vitejs/plugin-react` | Build tooling per SPEC §5.4, current stable majors per the same directive (D45). |
 | `@tanstack/react-router` | Type-safe routes **and** search params — filters and comparisons belong in the URL. |
 | `@tanstack/react-query` | Server-state cache that SSE frames can patch (§4). |
 | `zustand` | ~1 KB store for wizard, draft and UI state. |
@@ -6515,7 +6522,7 @@ catch `nightly-tag.txt` or asset-name drift before a user does.
 | `make ui` | `cd ui && npm ci && npm run build`, then sync `ui/dist` → `internal/web/dist` |
 | `make build` | `make ui` + `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X …buildinfo.Version=…"` → `dist/llamaman` |
 | `make build-all` | the above for `linux/amd64` and `linux/arm64` |
-| `make test` | `go test -race ./...` and `npm run test` |
+| `make test` | `go test -race ./...` and `npm run test` (the ui `test` script carries `--passWithNoTests` so the gate is green on a scaffold with no suites yet; drop the flag once the first real suite lands, so an empty run is again a failure) |
 | `make e2e` | Playwright against a `-tags e2e` binary |
 | `make lint` | gofumpt, vet, staticcheck, golangci-lint, govulncheck, eslint, prettier, shellcheck |
 | `make openapi` | regenerate `api/openapi.json` from the route registry and `ui/src/api/schema.d.ts` |

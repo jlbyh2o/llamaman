@@ -120,7 +120,7 @@ Status: agreed via interview on 2026-08-28. Decisions below are settled; items u
 1b. **Service identity**: because the HF cache lives in a user's home directory, the installer defaults to running `llamaman.service` (and instance units) as the **installing user** rather than a dedicated system user — that's how it sees your existing models on the server. A dedicated `llamaman` user with its own cache path remains an installer option for locked-down hosts.
 2. **Management UI port**: default **5526** ("LLAMA" on a phone keypad), configurable. Instance public ports chosen per instance at creation.
 3. **SQLite** for all state (pure-Go driver, keeps the single-binary story).
-4. **Frontend**: React 18 + TypeScript + Vite; dark-first professional theme with a light mode; no external CDN dependencies (fully self-hosted assets).
+4. **Frontend**: React 19 + TypeScript 7 + Vite 8 — the current stable majors, resolved by live registry query at implementation time, per the owner's standing "build on latest stable" directive (issued after this assumption was first written, which had defaulted to React 18 + Vite 6; see DESIGN D45); dark-first professional theme with a light mode; no external CDN dependencies (fully self-hosted assets).
 5. **Instance supervision via systemd template units** as described in §2 (this is what makes self-update non-disruptive).
 6. **Rollback depth**: keep exactly the previous llama.cpp build alongside the active one.
 7. **Benchmark/instance exclusivity** guard as in §3.5.

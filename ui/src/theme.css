@@ -1,0 +1,107 @@
+@import 'tailwindcss';
+
+/*
+ * Dark-first token palette (DESIGN section 4). Every color in the app is drawn
+ * from one of these custom properties — no literal hex outside this file — so
+ * the two themes stay in step and each pair can be checked for WCAG AA once,
+ * here. Dark is the default; light is the override, applied only when the
+ * viewer's system asks for it.
+ *
+ * These are the base tokens the component layer will build on. Screens land
+ * with DESIGN section 4's route list; this file is the palette they inherit.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, back to front. */
+  --lm-bg: #0b0d10;
+  --lm-surface: #14171c;
+  --lm-surface-raised: #1c2027;
+  --lm-border: #2a2f38;
+  --lm-border-strong: #3a414d;
+
+  /* Text. */
+  --lm-text: #e8ecf2;
+  --lm-text-muted: #a3adbb;
+  --lm-text-faint: #6f7a89;
+
+  /* Accent and state. */
+  --lm-accent: #6aa8ff;
+  --lm-accent-contrast: #06121f;
+  --lm-ok: #4ade80;
+  --lm-warn: #fbbf24;
+  --lm-danger: #f87171;
+
+  --lm-focus: var(--lm-accent);
+  --lm-radius: 0.5rem;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --lm-bg: #f7f8fa;
+    --lm-surface: #ffffff;
+    --lm-surface-raised: #f0f2f5;
+    --lm-border: #d9dee6;
+    --lm-border-strong: #b6bfcc;
+
+    --lm-text: #10141a;
+    --lm-text-muted: #4c5563;
+    --lm-text-faint: #6f7a89;
+
+    --lm-accent: #1e5fd0;
+    --lm-accent-contrast: #ffffff;
+    --lm-ok: #157f3d;
+    --lm-warn: #8a5a00;
+    --lm-danger: #b42318;
+  }
+}
+
+/* Expose the tokens to Tailwind v4's utility generator, so `bg-surface` and
+ * `text-muted` resolve to the same values as var(--lm-…). */
+@theme inline {
+  --color-bg: var(--lm-bg);
+  --color-surface: var(--lm-surface);
+  --color-surface-raised: var(--lm-surface-raised);
+  --color-border: var(--lm-border);
+  --color-border-strong: var(--lm-border-strong);
+  --color-text: var(--lm-text);
+  --color-muted: var(--lm-text-muted);
+  --color-faint: var(--lm-text-faint);
+  --color-accent: var(--lm-accent);
+  --color-accent-contrast: var(--lm-accent-contrast);
+  --color-ok: var(--lm-ok);
+  --color-warn: var(--lm-warn);
+  --color-danger: var(--lm-danger);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--lm-bg);
+  color: var(--lm-text);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--lm-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
