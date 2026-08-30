@@ -1,0 +1,43 @@
+name: Install shellcheck
+description: >-
+  Install a pinned upstream shellcheck onto the runner and verify its digest.
+
+# Why not `apt-get install shellcheck`: ubuntu-24.04 pins 0.9.0, the release that
+# introduced SC2317 ("command appears to be unreachable") without teaching it that
+# `trap` invokes a function. Both installer scripts register handlers through
+# `trap`, so 0.9.0 reports every line of every handler — 643 findings, all false.
+# 0.11.0 fixed the check and reports both scripts clean.
+#
+# This lives in a composite action rather than being written out in each workflow
+# because it already drifted once: ci.yml was moved to the upstream build and
+# release.yml was not, so the release gate failed on noise CI no longer saw. One
+# copy, one version, both callers.
+inputs:
+  version:
+    description: shellcheck release tag
+    required: false
+    default: v0.11.0
+  sha256:
+    description: >-
+      Digest of the linux.x86_64 tarball. Upstream publishes no checksum file, so
+      it is pinned here and verified before the binary is trusted.
+    required: false
+    default: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        SHELLCHECK_VERSION: ${{ inputs.version }}
+        SHELLCHECK_SHA256: ${{ inputs.sha256 }}
+      run: |
+        set -euo pipefail
+        tarball="shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+        curl -fsSL --retry 3 -o "$tarball" \
+          "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${tarball}"
+        echo "${SHELLCHECK_SHA256}  ${tarball}" | sha256sum -c -
+        tar -xJf "$tarball"
+        sudo install -m 0755 "shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+        rm -rf "$tarball" "shellcheck-${SHELLCHECK_VERSION}"
+        shellcheck --version
