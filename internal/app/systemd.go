@@ -167,3 +167,34 @@ func closeController(c systemd.Controller) error {
 	}
 	return nil
 }
+
+// journalTail satisfies supervisor.Journal (section 5.8's fit observation) over
+// internal/systemd's reader, which is the one package allowed to run
+// `journalctl` (D49 invariant 2).
+//
+// It reduces each entry to its MESSAGE because that is all ParseFitReport reads:
+// llama.cpp's own startup lines — `load_tensors: CUDA0 model buffer size = …`
+// and its two siblings — are the ground truth D33 shows beside the estimate and
+// the numerator of the ratio D32 learns.
+//
+// The scope is carried because `--user` is not optional in the D2 topology: the
+// system journal has none of a user manager's units, so a user-scope daemon
+// reading without it would find no lines and would silently record no
+// observation at all.
+type journalTail struct{ scope model.SystemdScope }
+
+func (j journalTail) Tail(ctx context.Context, unit string, n int) ([]string, error) {
+	entries, err := systemd.Tail(ctx, systemd.JournalOptions{
+		Scope: j.scope,
+		Units: []string{unit},
+		Lines: n,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Message)
+	}
+	return out, nil
+}

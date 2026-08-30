@@ -44,6 +44,19 @@ func (d *daemon) serve(ctx context.Context) error {
 		}
 	}
 
+	// §10's boot restore, which is also the `bench_run` finalizer. It runs after
+	// the triage that produced this boot's `interrupted` rows, and its first
+	// step is the one predicate that must not be phrased over a state: every run
+	// with `restore_done = 0 AND stopped_instances_json IS NOT NULL`, in ANY
+	// state, gets the instances it stopped restarted. A benchmark that leaves
+	// production instances down is the worst possible outcome, so this is
+	// re-checked at every boot rather than trusted to have happened.
+	if d.bench != nil {
+		if err := d.bench.Reconcile(ctx); err != nil {
+			d.log.Error("could not restore the instances a benchmark stopped", "error", err)
+		}
+	}
+
 	errc := make(chan error, 1)
 	go func() {
 		err := d.server.Serve(d.listener)
@@ -93,6 +106,19 @@ func (d *daemon) serve(ctx context.Context) error {
 	}()
 	d.setResync(d.supervisor.OnReconnect(supCtx))
 
+	// The inference gateway: the per-instance public listeners of §9.1 and the
+	// accounting flusher of §9.3. It is started after READY=1 for the same
+	// reason the supervisor is — the instance units systemd starts through
+	// `llamaman-instances.target` are ordered `After=llamaman.service` — and its
+	// first reconcile is what actually binds SPEC §1's public ports.
+	gatewayCtx, stopGateway := context.WithCancel(ctx)
+	defer stopGateway()
+	gatewayDone := make(chan struct{})
+	go func() {
+		defer close(gatewayDone)
+		d.runGateway(gatewayCtx)
+	}()
+
 	// The nightly maintenance pass (§2.11, §11.1 step 12's background workers).
 	go d.scheduleMaintenance(ctx)
 
@@ -109,6 +135,17 @@ func (d *daemon) serve(ctx context.Context) error {
 	}
 
 	err = d.shutdown(errc)
+
+	// The gateway's own Run loop performs the final accounting flush on the way
+	// out (§9.3), so it is stopped AFTER the drain and hand-off that shutdown
+	// performed and BEFORE close() shuts the database it flushes into.
+	stopGateway()
+	select {
+	case <-gatewayDone:
+	case <-time.After(gatewayStopGrace):
+		d.log.Warn("the gateway did not stop within its grace period",
+			"grace_sec", int(gatewayStopGrace.Seconds()))
+	}
 
 	// The supervisor holds the one write transaction that must not be cut off
 	// half way: it is the only writer allowed to close an `instance_starts`
@@ -131,6 +168,12 @@ func (d *daemon) serve(ctx context.Context) error {
 // stop open long enough for systemd to SIGKILL the process.
 const supervisorStopGrace = 10 * time.Second
 
+// gatewayStopGrace bounds the wait for the gateway's Run loop to finish its
+// final counter flush (§9.3). It is short because the flush is two upserts over
+// a map that is already in memory; the drain that could actually take time has
+// already happened, in shutdown.
+const gatewayStopGrace = 10 * time.Second
+
 // shutdown is section 9.4's ordered stop, for the steps that exist.
 //
 // The full sequence is: (1) commit the domain transition that prompted the
@@ -139,11 +182,16 @@ const supervisorStopGrace = 10 * time.Second
 // gateway.drain_sec, (5) checkpoint the WAL and release the job leases,
 // (6) hand each listener to the systemd fd store, (7) exit or wait.
 //
-// Steps 1, 2 and 6 belong to callers and subsystems that are not built yet —
-// POST /system/restart, the gateway listeners, internal/systemd's FDSTORE=1 —
-// and step 7's branch is section 12.1's. What runs here is 3, 4 and the job-lease
-// half of 5, which are the parts that already have something to drain and
-// something to release.
+// Steps 3, 4 and 6 run here for BOTH listener sets, and the two are not the
+// same: the management listener is an ordinary http.Server that is closed, while
+// each PUBLIC listener is paused, drained and then handed to systemd's
+// file-descriptor store with its socket still open (D58). That difference is the
+// whole of SPEC section 3.8's promise — `llama-server` is untouched by a restart
+// either way, but only a preserved socket keeps a client from getting
+// connection-refused on the port it was told to use.
+//
+// Steps 1 and 2 belong to `POST /system/restart`, which internal/api will call
+// this from, and step 7's branch is section 12.1's.
 func (d *daemon) shutdown(errc <-chan error) error {
 	if err := d.opts.Notifier.Stopping(); err != nil {
 		d.log.Debug("could not signal STOPPING=1", "error", err)
@@ -151,6 +199,12 @@ func (d *daemon) shutdown(errc <-chan error) error {
 
 	drain := d.drainWindow()
 	d.log.Info("draining", "drain_sec", int(drain.Seconds()))
+
+	// The public ports first, and with their own window: they carry generations
+	// that may run for minutes, and they are the ones whose sockets survive.
+	handOffCtx, cancelHandOff := context.WithTimeout(context.Background(), drain)
+	d.handOffListeners(handOffCtx, drain)
+	cancelHandOff()
 
 	// Shutdown stops accepting and waits for in-flight requests. A stream that
 	// outlives the window is closed by Close below, and the fact is logged
@@ -197,6 +251,17 @@ func (d *daemon) drainWindow() time.Duration {
 // call on a partially constructed daemon — which is exactly what an error part
 // way through boot leaves behind.
 func (d *daemon) close() {
+	// The public sockets, last thing before the database they account into.
+	// This runs AFTER shutdown's hand-off, so on a restart systemd already holds
+	// its own dup of every descriptor and closing ours releases nothing a client
+	// can notice; on a full stop the store drops them anyway
+	// (`FileDescriptorStorePreserve=restart`), which is exactly the wanted scope.
+	if d.gateway != nil {
+		if err := d.gateway.Close(); err != nil {
+			d.log.Warn("closing the public listeners", "error", err)
+		}
+		d.gateway = nil
+	}
 	if d.systemd.Control != nil {
 		if err := closeController(d.systemd.Control); err != nil {
 			d.log.Warn("closing the systemd control channel", "error", err)

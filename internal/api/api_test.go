@@ -186,6 +186,42 @@ func TestRoutingTable(t *testing.T) {
 		"POST /api/v1/downloads/{id}/resume": {AuthSession, "resumeDownload"},
 		"POST /api/v1/downloads/{id}/retry":  {AuthSession, "retryDownload"},
 		"POST /api/v1/downloads/{id}/cancel": {AuthSession, "cancelDownload"},
+
+		// Section 3.12, complete: the API tokens the gateway accepts, and the
+		// denial counters beside them. `POST /api/v1/tokens` is the only
+		// response in this API that ever contains a secret, and `DELETE` is a
+		// revoke — soft and terminal.
+		"GET /api/v1/tokens":            {AuthSession, "listAPITokens"},
+		"POST /api/v1/tokens":           {AuthSession, "createAPIToken"},
+		"GET /api/v1/tokens/{id}":       {AuthSession, "getAPIToken"},
+		"PATCH /api/v1/tokens/{id}":     {AuthSession, "patchAPIToken"},
+		"DELETE /api/v1/tokens/{id}":    {AuthSession, "deleteAPIToken"},
+		"GET /api/v1/tokens/{id}/usage": {AuthSession, "getAPITokenUsage"},
+		"GET /api/v1/gateway/denials":   {AuthSession, "listGatewayDenials"},
+
+		// Section 3.9, complete: the fit calculator. Both are POSTs because the
+		// body is a FlagSet, and neither creates anything — a `GET` with a
+		// forty-field query string was the alternative.
+		"POST /api/v1/fit/estimate":       {AuthSession, "estimateFit"},
+		"POST /api/v1/fit/estimate-batch": {AuthSession, "estimateFitBatch"},
+
+		// Section 3.13, complete: the benchmark runs and the two analysis
+		// endpoints beside them. `POST /bench/runs` is the one long action and
+		// it is idempotent (D65) — a double-clicked Run replays into `200`
+		// rather than expanding a second sweep — and it answers `201` for a
+		// draft, which is a row created with nothing queued.
+		"GET /api/v1/bench/runs":              {AuthSession, "listBenchRuns"},
+		"POST /api/v1/bench/runs":             {AuthSession, "createBenchRun"},
+		"GET /api/v1/bench/preflight":         {AuthSession, "benchPreflight"},
+		"GET /api/v1/bench/runs/{id}":         {AuthSession, "getBenchRun"},
+		"PATCH /api/v1/bench/runs/{id}":       {AuthSession, "patchBenchRun"},
+		"DELETE /api/v1/bench/runs/{id}":      {AuthSession, "deleteBenchRun"},
+		"POST /api/v1/bench/runs/{id}/start":  {AuthSession, "startBenchRun"},
+		"POST /api/v1/bench/runs/{id}/cancel": {AuthSession, "cancelBenchRun"},
+		"GET /api/v1/bench/runs/{id}/results": {AuthSession, "getBenchRunResults"},
+		"GET /api/v1/bench/runs/{id}/export":  {AuthSession, "exportBenchRun"},
+		"POST /api/v1/bench/compare":          {AuthSession, "compareBenchRuns"},
+		"GET /api/v1/bench/series":            {AuthSession, "benchSeries"},
 	}
 
 	got := map[string]struct {

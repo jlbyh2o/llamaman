@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jlbyh2o/llamaman/internal/hw"
 	"github.com/jlbyh2o/llamaman/internal/instances"
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/netutil"
@@ -61,6 +62,9 @@ type Store interface {
 
 	InstanceStatus(ctx context.Context, tx store.Tx, instanceID string) (model.InstanceStatus, error)
 	UpdateInstanceStatus(ctx context.Context, tx store.Tx, st model.InstanceStatus) (bool, error)
+
+	// InsertFitObservation records §8.7's calibration row on a first `ready`.
+	InsertFitObservation(ctx context.Context, tx store.Tx, o model.FitObservation) error
 
 	InsertInstanceStart(ctx context.Context, tx store.Tx, r model.InstanceStart) error
 	CloseInstanceStart(ctx context.Context, tx store.Tx, id string, c store.StartClosure) (bool, error)
@@ -158,6 +162,29 @@ type Config struct {
 	ManageUnitFiles bool
 	// Enablement observes unit enablement. Nil is documented above.
 	Enablement Enablement
+
+	// GPUs is D17's attribution source (§5.8's "per-instance VRAM and GPU
+	// attribution", §8.6). The sampler joins
+	// `--query-compute-apps=pid,gpu_uuid,used_gpu_memory` onto the unit's
+	// MainPID and writes `instance_status.vram_bytes`, `gpu_uuids_json` and
+	// `gpu_attribution`.
+	//
+	// Nil leaves all three columns alone — `gpu_attribution` stays at its schema
+	// default `'unknown'` and `gpu_uuids_json` stays NULL — which is the honest
+	// answer for a daemon with no prober, and which §10's guard reads as
+	// "occupies every GPU it could occupy" rather than as "occupies none".
+	GPUs hw.Prober
+
+	// Journal reads an instance unit's recent output, for §5.8's fit
+	// observation. Nil disables the observation entirely — no scan, no
+	// `fit_report_json`, no `fit_observations` row — which is also what
+	// `runtime_info.journal_read != 'ok'` produces (D77, F23).
+	Journal Journal
+	// Fit answers what the calculator predicted for an instance, so the
+	// observation can be written beside it (§8.7). Nil still stamps
+	// `fit_report_json` — D33's "reported by llama.cpp" panel — but writes no
+	// calibration row, because a ratio needs both halves.
+	Fit FitPredictor
 
 	// Host reads the boot identity. Nil uses ProcHostFacts.
 	Host HostFacts

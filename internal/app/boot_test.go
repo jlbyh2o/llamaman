@@ -367,3 +367,84 @@ func itoaPlain(n int) string {
 	}
 	return string(buf[i:])
 }
+
+// TestBootWiresSection9AndTheFitLoop asserts the mounts, because every one of
+// them is invisible when it is missing.
+//
+// A gateway that is never constructed does not fail a request — it binds no
+// port, so a client gets connection-refused instead of the documented
+// `503 instance_not_running`, and SPEC §1's ownership of the public inference
+// ports is simply not delivered. An `api.Config` field left nil does not fail
+// the build — the route is registered, appears in `api/openapi.json`, and
+// answers 503 forever. A nil `supervisor.Config.Fit` does not fail a load — it
+// writes no `fit_observations` row, so D32's calibration never reaches its
+// three-sample floor and every report says `modeled` for the life of the host.
+//
+// None of that shows up in a test of the subsystem itself, which is why it is
+// asserted here, at the composition root, where the omission actually lives.
+func TestBootWiresSection9AndTheFitLoop(t *testing.T) {
+	dir := t.TempDir()
+	seedLoopback(t, dir)
+
+	ctx := context.Background()
+	d, err := boot(ctx, withDefaults(Options{
+		Logger:           quiet(),
+		StateDirOverride: dir,
+		Getenv:           func(string) string { return "" },
+	}), flags{})
+	if err != nil {
+		t.Fatalf("boot: %v", err)
+	}
+	defer d.close()
+
+	if d.gpus == nil {
+		t.Error("no GPU prober: the supervisor cannot attribute VRAM (D17), the bench " +
+			"guard has no identity to intersect (§10) and every fit estimate is CPU-only")
+	}
+	if d.tokens == nil {
+		t.Error("no token store: §3.12's seven endpoints answer 503 and the gateway " +
+			"can only serve auth_mode='none'")
+	}
+	if d.gateway == nil {
+		t.Fatal("no gateway: no public port is bound, so SPEC §1's ownership of the " +
+			"inference ports is undelivered and a client gets connection-refused " +
+			"rather than 503 instance_not_running")
+	}
+
+	// D58's answer is read from the gateway, not asserted. Outside systemd there
+	// is no fd store, so it must say `none` — and say it in `runtime_info`,
+	// which is what `GET /system/capabilities` reports and what makes the
+	// restart dialog say "clients will see ~2 s of connection refused" instead
+	// of "no interruption".
+	if got := d.gateway.Continuity(); got != model.ContinuityNone {
+		t.Errorf("listener_continuity = %q outside systemd, want %q",
+			got, model.ContinuityNone)
+	}
+	var stored model.ListenerContinuity
+	if err := d.store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+		ri, err := d.store.RuntimeInfo(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if ri.ListenerContinuity != nil {
+			stored = *ri.ListenerContinuity
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("read runtime_info: %v", err)
+	}
+	if stored != d.gateway.Continuity() {
+		t.Errorf("runtime_info.listener_continuity = %q but the gateway says %q; "+
+			"the column must be read from the gateway rather than hard-coded",
+			stored, d.gateway.Continuity())
+	}
+
+	// The fit loop's supervisor half. Predict answers `ok=false` here — no model
+	// is seeded and no build is active — and that is the correct answer; what is
+	// being asserted is that a predictor EXISTS, since a nil one makes observeFit
+	// write no calibration row however many instances reach ready.
+	p := fitPredictor{st: d.store, gpus: d.gpus}
+	if _, ok, err := p.Predict(ctx, "01NOSUCHINSTANCE"); err == nil && ok {
+		t.Error("the predictor claimed a prediction for an instance that does not exist")
+	}
+}

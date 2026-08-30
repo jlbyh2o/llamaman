@@ -1,0 +1,5 @@
+load_tensors: offloading 48 repeating layers to GPU
+load_tensors:        CUDA0 model buffer size = 12288.00 MiB
+ggml_backend_cuda_buffer_type_alloc_buffer: cudaMalloc failed: out of memory
+llama_kv_cache: failed to allocate buffer for kv cache
+llama_init_from_model: failed to initialize the context

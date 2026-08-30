@@ -117,6 +117,12 @@ func (s *Supervisor) pass(ctx context.Context, inst model.Instance,
 	// `stale_version` being a derived badge rather than a state.
 	s.stampExeVersion(&next, obs, active)
 
+	// D17's per-instance VRAM and GPU identity, joined on the MainPID this pass
+	// just read. `instance_status.gpu_uuids_json` is what section 10's bench
+	// exclusivity guard intersects, so a pass that observed a running unit and
+	// wrote no attribution would leave that guard with nothing to reason about.
+	s.attribute(ctx, &next, inst, obs)
+
 	closure, closeRow := s.ledgerClosure(inst, obs, open, now)
 	nextState, fails := s.deriveState(ctx, inst, status, obs, open, closure, now)
 	s.mu.Lock()
@@ -205,6 +211,14 @@ func (s *Supervisor) pass(ctx context.Context, inst model.Instance,
 		// the run before last.
 		lastClosed = closedRow(*open, closure)
 		open = nil
+	}
+
+	// The fit observation of §5.8, on the FIRST `ready` of a run and nowhere
+	// else. It runs after the record transaction has committed, because the scan
+	// forks journalctl and a write transaction held open across a subprocess
+	// blocks every other writer for as long as the journal takes to answer.
+	if firstReady {
+		s.observeFit(ctx, inst, next, now.UnixMilli())
 	}
 
 	comingUp := nextState == model.InstanceStarting || nextState == model.InstanceLoading

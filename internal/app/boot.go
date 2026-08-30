@@ -15,9 +15,12 @@ import (
 
 	"github.com/jlbyh2o/llamaman/internal/api"
 	"github.com/jlbyh2o/llamaman/internal/auth"
+	"github.com/jlbyh2o/llamaman/internal/bench"
 	"github.com/jlbyh2o/llamaman/internal/buildinfo"
 	"github.com/jlbyh2o/llamaman/internal/events"
+	"github.com/jlbyh2o/llamaman/internal/gateway"
 	"github.com/jlbyh2o/llamaman/internal/hf"
+	"github.com/jlbyh2o/llamaman/internal/hw"
 	"github.com/jlbyh2o/llamaman/internal/instances"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/llamacpp"
@@ -30,6 +33,7 @@ import (
 	"github.com/jlbyh2o/llamaman/internal/sse"
 	"github.com/jlbyh2o/llamaman/internal/store"
 	"github.com/jlbyh2o/llamaman/internal/supervisor"
+	"github.com/jlbyh2o/llamaman/internal/tokens"
 	"github.com/jlbyh2o/llamaman/internal/web"
 )
 
@@ -56,7 +60,15 @@ type daemon struct {
 	instances   *instances.Service
 	supervisor  *supervisor.Supervisor
 	llamacpp    *llamacpp.Service
+	bench       *bench.Service
+	tokens      *tokens.Service
+	gateway     *gateway.Gateway
 	releases    *github.Client
+
+	// gpus is step 6's GPU probe, shared by the supervisor's D17 attribution,
+	// the bench exclusivity guard and the fit calculator's host inputs. See
+	// hardware.go for why there is exactly one.
+	gpus *hw.NvidiaSMIProber
 
 	// systemd is what step 6's probe learned: the control channel, the two
 	// polkit answers and journal readability. Its zero value is the F10
@@ -239,6 +251,12 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 			"polkit", d.systemd.PolkitDetail)
 	}
 
+	// The GPU half of the same probe. It is built here, with the rest of step 6,
+	// so that every subsystem constructed below shares one sample cache and one
+	// memory of whether this driver's nvidia-smi accepts `gpu_uuid` (section
+	// 8.6).
+	d.buildHardware()
+
 	// --- step 6b: port preference from the unit, resolved once. The flag is a
 	// SEED, never an override, so the database stays the single source of
 	// truth SPEC section 3.9 requires.
@@ -313,8 +331,26 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 		Control:         d.systemd.Control,
 		StateDir:        d.stateDir,
 		ManageUnitFiles: d.systemd.ManageUnitFiles(d.scope),
-		Now:             opts.Now,
-		Logger:          log,
+		// D17's attribution source. Without it `instance_status.gpu_uuids_json`
+		// is never populated and section 10's bench exclusivity guard has
+		// nothing to intersect — it would still fail closed, but it could never
+		// take the `measured` path D17 exists for.
+		GPUs: d.gpus,
+		// Section 5.8's fit observation (D33) and D32's calibration input. The
+		// journal is what llama.cpp's own buffer sizes are read from, and the
+		// predictor is what they are recorded BESIDE; a nil journal writes
+		// neither `fit_report_json` nor a `fit_observations` row, so the
+		// ground-truth panel is blank and the calibration never reaches its
+		// three-sample floor.
+		//
+		// A nil Journal here is the honest F10/F23 answer rather than a gap: the
+		// probe reports `journal_read` and observeFit re-checks it per
+		// observation, so an identity that cannot read the journal degrades
+		// loudly instead of calibrating from a scan of nothing.
+		Journal: journalTail{scope: scope},
+		Fit:     fitPredictor{st: st, gpus: d.gpus},
+		Now:     opts.Now,
+		Logger:  log,
 	})
 	if err != nil {
 		d.close()
@@ -341,7 +377,24 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 	// because §2.3's boot triage looks a worker up in the registry to move its
 	// domain row in the same transaction as the job row: a build interrupted by
 	// the previous boot must find its DomainWriter already in place.
+	// The bench runner is constructed BEFORE the llama.cpp service, because
+	// §6.6 step 1's activation guard reads it: `llamacpp.Config.Bench` is the
+	// BenchGuard that answers "is a bench live", and a daemon that built the two
+	// the other way round would have to pass nil and mean it.
+	if err := d.buildBench(); err != nil {
+		d.close()
+		return nil, err
+	}
+
 	if err := d.buildLlamacpp(); err != nil {
+		d.close()
+		return nil, err
+	}
+
+	// The inference gateway and the token store behind it (section 9). It is
+	// built after the instance service, whose rows its first reconcile reads,
+	// and before the API, which answers `GET /api/v1/gateway/denials` from it.
+	if err := d.buildGateway(); err != nil {
 		d.close()
 		return nil, err
 	}
@@ -560,7 +613,16 @@ func (d *daemon) writeRuntimeInfo(ctx context.Context) error {
 	bootAt := now.UnixMilli()
 	port := int64(d.uiPort)
 	scope := d.scope
+	// D58's honest answer, read from the gateway rather than asserted here: it
+	// is `fdstore` only when this daemon actually has somewhere to hand its
+	// sockets, and it degrades to `none` the moment a store refuses. A literal
+	// would make `GET /system/capabilities` promise an uninterrupted restart on
+	// a host that cannot deliver one — which is the one thing section 9.4 says
+	// must never happen silently.
 	continuity := model.ContinuityNone
+	if d.gateway != nil {
+		continuity = d.gateway.Continuity()
+	}
 	stateDir := d.stateDir
 	bind := d.uiBind
 	url := fmt.Sprintf("http://%s", net.JoinHostPort(displayHost(d.uiBind), strconv.Itoa(d.uiPort)))
@@ -680,6 +742,7 @@ func (d *daemon) buildAPI() (http.Handler, error) {
 		Setup:       d.setup,
 		Instances:   d.instances,
 		Llamacpp:    d.llamacpp,
+		Bench:       d.bench,
 		HF:          d.hfClient,
 		LocalModels: localIndex{st: d.store},
 		HFToken: hfTokenService{
@@ -688,6 +751,21 @@ func (d *daemon) buildAPI() (http.Handler, error) {
 		GitHubToken: githubTokenService{
 			secrets: d.secrets, client: d.releases, agent: UserAgent,
 		},
+		APITokens: d.tokens,
+		Gateway:   d.gateway,
+		// Section 8.6's host half. A nil Hardware is a CPU-only estimate rather
+		// than a 503, which is a real answer on a host with no NVIDIA card —
+		// but this host has a prober either way, and one that found no card
+		// answers with an empty inventory rather than an error.
+		Hardware: hostProbe{NvidiaSMIProber: d.gpus},
+		// D32's learned correction. Without it every report is permanently
+		// `confidence: "modeled"`, however many observations the supervisor
+		// wrote.
+		FitCalibration: fitCalibration{st: d.store},
+		// `fit.margin_mib` (section 8.1). A registered setting nothing reads is
+		// a knob that lies, which SPEC section 3.9's zero-config mandate makes
+		// worse rather than better.
+		Settings:    d.settings,
 		Meta:        d,
 		Events:      stream,
 		Fallback:    ui,

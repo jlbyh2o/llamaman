@@ -1,0 +1,3 @@
+Field "gpu_uuid" is not a valid field to query.
+
+Please run 'nvidia-smi --help-query-compute-apps' to get a list of valid fields.

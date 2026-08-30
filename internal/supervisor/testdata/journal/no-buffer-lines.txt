@@ -1,0 +1,2 @@
+main: server is listening on http://127.0.0.1:21001 - starting the main loop
+srv  update_slots: all slots are idle

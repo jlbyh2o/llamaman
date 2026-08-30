@@ -655,3 +655,57 @@ func TestNewIDSortsByCreation(t *testing.T) {
 		t.Error("ParseIDTime accepted a non-ULID")
 	}
 }
+
+// TestNewIDSurvivesInterleavedMilliseconds is the case a plain monotonic ULID
+// entropy source does NOT survive, and the one this daemon actually runs: the
+// mint is shared, so a mint at some other millisecond lands between two mints
+// that share a timestamp.
+//
+// Two events appended inside one write transaction share a `now`; a job enqueued
+// from another goroutine mints in between. If the second event's id sorted below
+// the first, `EventsAfter` — `WHERE id > ? ORDER BY id` — would never replay it
+// to a client that reconnected on the first id, and the UI would silently miss a
+// state transition.
+func TestNewIDSurvivesInterleavedMillisecond(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+
+	for _, tc := range []struct {
+		name string
+		// between is the offset of the interleaved mint from `at`.
+		between time.Duration
+	}{
+		{name: "a later millisecond", between: 5 * time.Millisecond},
+		{name: "a much later millisecond", between: time.Hour},
+		{name: "an earlier millisecond", between: -5 * time.Millisecond},
+		{name: "the same millisecond", between: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for range 200 {
+				first := NewID(at)
+				NewID(at.Add(tc.between))
+				second := NewID(at)
+				if second <= first {
+					t.Fatalf("the second id %q does not sort after %q; an SSE client "+
+						"resuming from %q would never receive it", second, first, first)
+				}
+			}
+		})
+	}
+}
+
+// TestNewIDKeepsItsTimestamp: the cursor property must not be bought by moving a
+// mint to a timestamp its caller did not ask for, because ParseIDTime is what
+// retention sweeps range-check ids against.
+func TestNewIDKeepsItsTimestamp(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+
+	NewID(at.Add(time.Hour))
+	got, err := ParseIDTime(NewID(at))
+	if err != nil {
+		t.Fatalf("ParseIDTime: %v", err)
+	}
+	if !got.Equal(at) {
+		t.Errorf("ParseIDTime = %v, want %v — a mint after a later one must still carry "+
+			"the instant it was asked for", got, at)
+	}
+}

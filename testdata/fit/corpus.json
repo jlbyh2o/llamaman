@@ -1,0 +1,405 @@
+{
+  "note": "Section 8.7's golden corpus. Each row is one load of one of the four synthetic GGUF fixtures in internal/fit/golden_test.go, with the three buffer figures llama.cpp prints at startup. They are derived by gencorpus.py, a SECOND implementation of sections 8.2-8.4 written from the design text, so the Go calculator is compared against the specification rather than against itself. Rows recorded from a real host -- a `fit_observations` row's actual_weights_bytes / actual_kv_bytes / actual_compute_bytes and its `oom` flag -- have the same shape and drop straight in beside these; the compute-buffer figure is the one that most needs them, because section 8.7 calls it the only genuinely empirical term.",
+  "loads": [
+    {
+      "name": "llama f16/f16 c=4096 fa=on",
+      "fixture": "llama",
+      "n_ctx": 4096,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "on",
+      "free_vram_bytes": 2051664896,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 4320256,
+        "kv_bytes": 8388608,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 8912896
+      },
+      "oom": false
+    },
+    {
+      "name": "llama f16/f16 c=4096 fa=off",
+      "fixture": "llama",
+      "n_ctx": 4096,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "off",
+      "free_vram_bytes": 2116676608,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 4320256,
+        "kv_bytes": 8388608,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 73924608
+      },
+      "oom": false
+    },
+    {
+      "name": "llama f16/f16 c=2048 fa=on (OOM)",
+      "fixture": "llama",
+      "n_ctx": 2048,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "on",
+      "free_vram_bytes": 403303424,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 4320256,
+        "kv_bytes": 4194304,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 8912896
+      },
+      "oom": true
+    },
+    {
+      "name": "llama f16/f16 c=8192 fa=on",
+      "fixture": "llama",
+      "n_ctx": 8192,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "on",
+      "free_vram_bytes": 2060053504,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 4320256,
+        "kv_bytes": 16777216,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 8912896
+      },
+      "oom": false
+    },
+    {
+      "name": "llama q8_0/q8_0 c=4096 fa=on",
+      "fixture": "llama",
+      "n_ctx": 4096,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "q8_0",
+      "type_v": "q8_0",
+      "flash_attn": "on",
+      "free_vram_bytes": 2047732736,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 4320256,
+        "kv_bytes": 4456448,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 8912896
+      },
+      "oom": false
+    },
+    {
+      "name": "llama q8_0/q8_0 c=16384 fa=on (OOM)",
+      "fixture": "llama",
+      "n_ctx": 16384,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "q8_0",
+      "type_v": "q8_0",
+      "flash_attn": "on",
+      "free_vram_bytes": 416934912,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 4320256,
+        "kv_bytes": 17825792,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 8912896
+      },
+      "oom": true
+    },
+    {
+      "name": "qwen3 f16/f16 c=4096 fa=on",
+      "fixture": "qwen3",
+      "n_ctx": 4096,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "on",
+      "free_vram_bytes": 2516905984,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 54063104,
+        "kv_bytes": 100663296,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 332136448
+      },
+      "oom": false
+    },
+    {
+      "name": "qwen3 f16/f16 c=8192 fa=on",
+      "fixture": "qwen3",
+      "n_ctx": 8192,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "on",
+      "free_vram_bytes": 2617569280,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 54063104,
+        "kv_bytes": 201326592,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 332136448
+      },
+      "oom": false
+    },
+    {
+      "name": "qwen3 f16/f16 c=32768 fa=on (OOM)",
+      "fixture": "qwen3",
+      "n_ctx": 32768,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "on",
+      "free_vram_bytes": 1577381888,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 54063104,
+        "kv_bytes": 805306368,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 332136448
+      },
+      "oom": true
+    },
+    {
+      "name": "qwen3 q8_0/q8_0 c=32768 fa=on",
+      "fixture": "qwen3",
+      "n_ctx": 32768,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "q8_0",
+      "type_v": "q8_0",
+      "flash_attn": "on",
+      "free_vram_bytes": 2844061696,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 54063104,
+        "kv_bytes": 427819008,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 332136448
+      },
+      "oom": false
+    },
+    {
+      "name": "qwen3 f16/f16 c=8192 fa=off",
+      "fixture": "qwen3",
+      "n_ctx": 8192,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "off",
+      "free_vram_bytes": 2743398400,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 54063104,
+        "kv_bytes": 201326592,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 457965568
+      },
+      "oom": false
+    },
+    {
+      "name": "gemma3 f16/f16 c=2048 fa=on (OOM)",
+      "fixture": "gemma3",
+      "n_ctx": 2048,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "on",
+      "free_vram_bytes": 445079552,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 13983744,
+        "kv_bytes": 2097152,
+        "kv_swa_bytes": 25165824,
+        "compute_bytes": 17956864
+      },
+      "oom": true
+    },
+    {
+      "name": "gemma3 f16/f16 c=8192 fa=on",
+      "fixture": "gemma3",
+      "n_ctx": 8192,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "on",
+      "free_vram_bytes": 2095538176,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 13983744,
+        "kv_bytes": 8388608,
+        "kv_swa_bytes": 25165824,
+        "compute_bytes": 17956864
+      },
+      "oom": false
+    },
+    {
+      "name": "gemma3 q8_0/q8_0 c=8192 fa=on",
+      "fixture": "gemma3",
+      "n_ctx": 8192,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "q8_0",
+      "type_v": "q8_0",
+      "flash_attn": "on",
+      "free_vram_bytes": 2079809536,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 13983744,
+        "kv_bytes": 4456448,
+        "kv_swa_bytes": 13369344,
+        "compute_bytes": 17956864
+      },
+      "oom": false
+    },
+    {
+      "name": "gemma3 f16/f16 c=4096 fa=off (OOM)",
+      "fixture": "gemma3",
+      "n_ctx": 4096,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "off",
+      "free_vram_bytes": 505896960,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 13983744,
+        "kv_bytes": 4194304,
+        "kv_swa_bytes": 25165824,
+        "compute_bytes": 76677120
+      },
+      "oom": true
+    },
+    {
+      "name": "moe f16/f16 c=4096 fa=on",
+      "fixture": "moe",
+      "n_ctx": 4096,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "on",
+      "free_vram_bytes": 2377313280,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 16182272,
+        "kv_bytes": 8388608,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 322699264
+      },
+      "oom": false
+    },
+    {
+      "name": "moe f16/f16 c=8192 fa=on",
+      "fixture": "moe",
+      "n_ctx": 8192,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "on",
+      "free_vram_bytes": 2385701888,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 16182272,
+        "kv_bytes": 16777216,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 322699264
+      },
+      "oom": false
+    },
+    {
+      "name": "moe q8_0/q8_0 c=8192 fa=on (OOM)",
+      "fixture": "moe",
+      "n_ctx": 8192,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "q8_0",
+      "type_v": "q8_0",
+      "flash_attn": "on",
+      "free_vram_bytes": 733670400,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 16182272,
+        "kv_bytes": 8912896,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 322699264
+      },
+      "oom": true
+    },
+    {
+      "name": "moe f16/f16 c=2048 fa=off",
+      "fixture": "moe",
+      "n_ctx": 2048,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "f16",
+      "type_v": "f16",
+      "flash_attn": "off",
+      "free_vram_bytes": 2404576256,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 16182272,
+        "kv_bytes": 4194304,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 354156544
+      },
+      "oom": false
+    },
+    {
+      "name": "qwen3 q8_0/q8_0 c=2048 fa=off",
+      "fixture": "qwen3",
+      "n_ctx": 2048,
+      "n_ubatch": 512,
+      "n_batch": 2048,
+      "n_parallel": 1,
+      "type_k": "q8_0",
+      "type_v": "q8_0",
+      "flash_attn": "off",
+      "free_vram_bytes": 2501701632,
+      "ram_free_bytes": 34359738368,
+      "observed": {
+        "weights_bytes": 54063104,
+        "kv_bytes": 26738688,
+        "kv_swa_bytes": 0,
+        "compute_bytes": 390856704
+      },
+      "oom": false
+    }
+  ]
+}

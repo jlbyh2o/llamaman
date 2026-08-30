@@ -73,10 +73,14 @@ func (d *daemon) buildLlamacpp() error {
 		// `GET /llamacpp/plan` is for.
 		ReleaseList: releases,
 		Logs:        logs,
-		// Bench and Notify are the documented nils: internal/bench and the
-		// notifications sink are not wired into this daemon yet, so no bench can
-		// be live and a failed canary is reported through `events` alone. Both
-		// facts are true of THIS build rather than assumed about every host.
+		// Bench is §6.6 step 1's second refusal term (D75), and it is wired
+		// because buildBench ran first: an activation is refused while the bench
+		// lease is held OR while any run still owes stopped instances a restart.
+		// Notify remains the documented nil — the notifications sink is not
+		// wired into this daemon yet, so a failed canary is reported through
+		// `events` alone, which is a fact about THIS build rather than an
+		// assumption about every host.
+		Bench:  d.bench,
 		Now:    d.opts.Now,
 		Logger: d.log,
 	})

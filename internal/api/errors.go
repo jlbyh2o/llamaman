@@ -9,6 +9,7 @@ import (
 	"github.com/jlbyh2o/llamaman/internal/api/middleware"
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/store"
+	"github.com/jlbyh2o/llamaman/internal/tokens"
 )
 
 // The error codes this layer owns, beyond the ones internal/model closes a
@@ -215,6 +216,19 @@ func statusForCode(c model.ErrorCode) int {
 		// here — the caller can make it possible (stop using the model, promote
 		// another root) and try again.
 		return http.StatusConflict
+	case tokens.CodeTokenRevoked:
+		// Section 3.12's one refusal to change state. `revoked` is terminal and
+		// the hash is retained precisely so a leaked secret can never be
+		// re-minted into validity, so this is 409 — well formed, and permanently
+		// impossible — rather than 422.
+		return http.StatusConflict
+	case tokens.CodeTokenNameRequired,
+		tokens.CodeTokenScopeInvalid,
+		tokens.CodeTokenStateInvalid,
+		tokens.CodeTokenRateLimitInvalid:
+		// The body parsed and what it named is the problem, which is what 422
+		// means throughout this API.
+		return http.StatusUnprocessableEntity
 	case model.CodeRootNotWritable, model.CodeRootPathProtected:
 		// A path this host will not accept as a writable cache root. 422 rather
 		// than 400 for the same reason section 3.10's save-time refusals are:

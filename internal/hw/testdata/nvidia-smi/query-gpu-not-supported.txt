@@ -1,0 +1,1 @@
+0, GPU-4d8e21b7-0c35-49fa-a6d2-83b1f70c95ea, Quadro P2000, 5120, 210, 4910, 0, 44, [N/A], [Not Supported], 470.256.02

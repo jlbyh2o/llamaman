@@ -78,6 +78,14 @@ type Config struct {
 	// is reported, never faked.
 	Llamacpp LlamacppService
 
+	// Bench serves the benchmark endpoints of section 3.13 — the run listing,
+	// the sweep expansion, the preflight, start, cancel, the detail, the
+	// results, the three-format export, the comparison and the history series.
+	// internal/bench satisfies it. Nil answers those routes 503 rather than
+	// removing them: they are documented endpoints, and a build gap is
+	// reported, never faked.
+	Bench BenchService
+
 	// HF serves the remote Hugging Face endpoints of section 3.6 — search,
 	// metadata, tree, card and the header peek. *hf.Client satisfies it. Nil
 	// answers 503, for the same reason the fields above do: they are documented
@@ -95,6 +103,41 @@ type Config struct {
 	// presence, hint and validity only. Nil answers 503.
 	HFToken     TokenService
 	GitHubToken TokenService
+
+	// APITokens serves the token endpoints of section 3.12 — mint, list,
+	// detail, patch, revoke and per-token usage. internal/tokens satisfies it.
+	// Nil answers those routes 503 rather than removing them: they are
+	// documented endpoints, and a build gap is reported, never faked.
+	APITokens APITokenService
+
+	// Gateway answers `GET /api/v1/gateway/denials`. internal/gateway satisfies
+	// it. Nil answers that route 503, for the same reason the fields around it
+	// do: it is a documented endpoint, and a build gap is reported, never faked.
+	Gateway GatewayService
+
+	// Hardware answers the fit endpoints' host half (section 8.6): the GPU
+	// inventory and system RAM. internal/hw's NvidiaSMIProber satisfies it.
+	//
+	// Nil is a supported mode rather than a 503, and that is the one place the
+	// fit routes differ from every other group here: with no prober the answer
+	// is a CPU-only estimate, which is a real answer on a host with no NVIDIA
+	// card and is what the quant picker needs there.
+	Hardware FitHardware
+
+	// FitCalibration supplies D32's learned correction. Nil makes every report
+	// `confidence: "modeled"`, which is exactly what a fresh install should say.
+	FitCalibration FitCalibrationSource
+
+	// Settings reads the typed settings this layer acts on. *settings.Cache
+	// satisfies it.
+	//
+	// Today that is exactly one key — `fit.margin_mib`, section 8.1's third host
+	// input and a user-editable knob in section 2.1's table — and a nil source
+	// simply estimates with fit.DefaultMarginMiB, the same number the registry
+	// defaults to. A knob the daemon registers and never reads would be worse
+	// than no knob at all under SPEC section 3.9's zero-config mandate, which is
+	// why this field exists rather than a constant.
+	Settings Settings
 
 	// Events is the SSE transport mounted at `GET /api/v1/events`
 	// (section 3.14). It is internal/sse's Handler, which owns the handshake,
@@ -194,10 +237,19 @@ func (a *API) register() error {
 	for _, rt := range a.downloadRoutes() {
 		add(rt)
 	}
+	for _, rt := range a.benchRoutes() {
+		add(rt)
+	}
 	for _, rt := range a.hfRoutes() {
 		add(rt)
 	}
 	for _, rt := range a.tokenRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.fitRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.apiTokenRoutes() {
 		add(rt)
 	}
 	if a.cfg.Events != nil {
