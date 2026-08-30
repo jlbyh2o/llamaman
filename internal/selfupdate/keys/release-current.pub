@@ -4,10 +4,12 @@
 # trust root for self-update, and it is compiled into the binary rather than
 # fetched, because verification has to work offline with no external tooling.
 #
-# This placeholder was generated with its private half discarded, so nothing can
-# produce a signature that verifies against it. That is deliberate and it fails
-# CLOSED: until release.yml's signing key is published here, `POST /update/apply`
-# refuses every tarball at the signature step instead of installing an unsigned
-# one. Replacing this file is a release-engineering act, and the release job that
-# signs `checksums.txt` is the only thing that may decide what goes in it.
-1awOluFYFDMWwKidjiUCFXxJJXYolndhWc1BvEMIjc0=
+# This is a REAL key. Its private half exists only in the `LLAMAMAN_RELEASE_KEY`
+# repository secret, and `release.yml` derives the public half from that secret
+# and refuses to build if it is not this value or `release-next.pub` — because a
+# release signed by a key no shipped binary accepts looks, to every user, exactly
+# like a corrupt download.
+#
+# Replacing this file is a release-engineering act. Rotation goes through
+# `release-next.pub` and needs no flag day; see installer/README.md.
+1PCxJhKncTAjXQVhpNENsaExLzeHTnTr/6Eystj2weY=
