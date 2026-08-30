@@ -32,6 +32,18 @@ func (d *daemon) serve(ctx context.Context) error {
 		d.log.Info("triaged jobs left behind by a previous boot", "count", len(triage))
 	}
 
+	// §6.6's boot reconciliation, which is also the `llamacpp_activate`
+	// finalizer: release a build lease a boot that is gone still holds, repair
+	// `versions/active` and `versions/previous` FROM the rows — the row wins —
+	// and close every activation job the restart left `interrupted`. It runs
+	// after the triage that produced those `interrupted` rows and before the
+	// runner can lease anything new.
+	if d.llamacpp != nil {
+		if err := d.llamacpp.Reconcile(ctx); err != nil {
+			d.log.Error("could not reconcile the llama.cpp versions at boot", "error", err)
+		}
+	}
+
 	errc := make(chan error, 1)
 	go func() {
 		err := d.server.Serve(d.listener)
@@ -80,6 +92,9 @@ func (d *daemon) serve(ctx context.Context) error {
 		}
 	}()
 	d.setResync(d.supervisor.OnReconnect(supCtx))
+
+	// The nightly maintenance pass (§2.11, §11.1 step 12's background workers).
+	go d.scheduleMaintenance(ctx)
 
 	// Sixty seconds after a boot that stayed ready, clear the unit's
 	// start-limit counter (D93). internal/systemd owns ResetFailed; the timer

@@ -1,0 +1,8 @@
+ggml_cuda_init: GGML_CUDA_FORCE_MMQ:    no
+ggml_cuda_init: GGML_CUDA_FORCE_CUBLAS: no
+ggml_cuda_init: found 2 CUDA devices:
+  Device 0: NVIDIA GeForce RTX 4090, compute capability 8.9, VMM: yes
+  Device 1: NVIDIA GeForce RTX 3090, compute capability 8.6, VMM: yes
+Available devices:
+  CUDA0: NVIDIA GeForce RTX 4090 (24210 MiB, 23890 MiB free)
+  CUDA1: NVIDIA GeForce RTX 3090 (24576 MiB, 24261 MiB free)

@@ -110,6 +110,33 @@ const (
 	// holds. Soft deletion scopes the unique index to live rows (D68), so a
 	// deleted instance's name is free and this code never fires for one.
 	CodeInstanceNameTaken ErrorCode = "instance_name_taken"
+
+	// CodeModelInUse is the 409 of §3.7 and §7.2a, and the two paths that
+	// return it count DIFFERENT rows on purpose.
+	//
+	// Deleting a MODEL counts non-deleted instances only: that path never
+	// issues a SQL DELETE — the row moves `deleting → deleted` and stays — so
+	// `instances.model_id`'s ON DELETE RESTRICT is never exercised and a
+	// soft-deleted instance keeps a readable record of what it pointed at (D68).
+	// Detaching a cache ROOT counts every referencing row including the
+	// soft-deleted ones, because that path DOES issue one, `models` cascades
+	// away, and RESTRICT does not care that a row is soft-deleted. Details
+	// carry the instances and which of them are deleted.
+	CodeModelInUse ErrorCode = "model_in_use"
+	// CodeRootIsPrimary is the 409 for detaching the primary cache root
+	// (§3.7). Exactly one primary always exists — it is the only root Llama Man
+	// writes to — so detaching it is refused rather than left to leave the host
+	// with nowhere to download.
+	CodeRootIsPrimary ErrorCode = "root_is_primary"
+	// CodeRootNotWritable is the 422 for promoting a `writable=0` root
+	// (§7.2a). Such a root is read, scanned and served forever; it simply can
+	// never be the one downloads land in.
+	CodeRootNotWritable ErrorCode = "root_not_writable"
+	// CodeRootPathProtected is the 422 for a cache root under a prefix the unit
+	// mounts read-only through `ProtectSystem=full` (§3.7, D57). The daemon
+	// could not write there whatever the file mode says, and registration is
+	// the honest moment to say so rather than the first download.
+	CodeRootPathProtected ErrorCode = "root_path_protected"
 )
 
 // WarningCode is the machine-readable code of an entry in a response's

@@ -1,0 +1,5 @@
+ccache version 4.10.2
+Features: file-storage http-storage redis-storage
+
+Copyright (C) 2002-2007 Andrew Tridgell
+Copyright (C) 2009-2024 Joel Rosdahl and other contributors

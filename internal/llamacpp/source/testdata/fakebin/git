@@ -1,0 +1,93 @@
+#!/bin/sh
+# Fake `git` for internal/llamacpp/source's pipeline tests.
+#
+# It implements only what section 6.5's `fetch` phase performs — a blobless
+# partial clone, a fetch, ref resolution, a worktree and its submodules — and
+# records every invocation so a test can assert that a RESUMED build ran none of
+# them (D4).
+#
+#   FAKE_STATE     directory this fake records calls in (required)
+#   FAKE_SHA       the commit every rev-parse resolves to
+#   FAKE_GIT_FAIL  clone | fetch | rev-parse | worktree — that subcommand fails
+set -u
+
+state="${FAKE_STATE:-/tmp/llamaman-fakegit}"
+mkdir -p "$state"
+printf '%s\n' "$*" >>"$state/git.args"
+
+if [ "${1:-}" = "-C" ]; then
+	shift 2
+fi
+
+sha="${FAKE_SHA:-1111111111111111111111111111111111111111}"
+sub="${1:-}"
+
+fail_if() {
+	if [ "${FAKE_GIT_FAIL:-}" = "$1" ]; then
+		echo "fatal: could not read from remote repository" >&2
+		exit 128
+	fi
+}
+
+case "$sub" in
+clone)
+	fail_if clone
+	dest=""
+	for a in "$@"; do dest="$a"; done
+	mkdir -p "$dest/.git"
+	echo "Cloning into '$dest'..."
+	exit 0
+	;;
+
+remote)
+	exit 0
+	;;
+
+fetch)
+	fail_if fetch
+	echo "From origin"
+	exit 0
+	;;
+
+rev-parse)
+	fail_if rev-parse
+	echo "$sha"
+	exit 0
+	;;
+
+submodule)
+	exit 0
+	;;
+
+worktree)
+	case "${2:-}" in
+	add)
+		fail_if worktree
+		shift 2
+		wt=""
+		for a in "$@"; do
+			case "$a" in
+			--*) ;;
+			*) if [ -z "$wt" ]; then wt="$a"; fi ;;
+			esac
+		done
+		mkdir -p "$wt/.git"
+		echo "Preparing worktree (detached HEAD ${sha})"
+		exit 0
+		;;
+	remove)
+		last=""
+		for a in "$@"; do last="$a"; done
+		rm -rf "$last"
+		exit 0
+		;;
+	prune)
+		exit 0
+		;;
+	esac
+	exit 0
+	;;
+esac
+
+echo "fake git: unsupported subcommand $sub" >&2
+exit 2

@@ -1,0 +1,44 @@
+[
+  {
+    "_id": "000000000000000000000001",
+    "id": "bartowski/Qwen3-8B-GGUF",
+    "modelId": "bartowski/Qwen3-8B-GGUF",
+    "author": "bartowski",
+    "gated": false,
+    "private": false,
+    "downloads": 148213,
+    "likes": 412,
+    "lastModified": "2026-04-11T09:14:32.000Z",
+    "tags": ["gguf", "text-generation", "qwen3"],
+    "gguf": {
+      "architecture": "qwen3",
+      "context_length": 40960,
+      "total": 8190735360,
+      "bos_token": "<|im_start|>",
+      "eos_token": "<|im_end|>"
+    }
+  },
+  {
+    "_id": "000000000000000000000002",
+    "id": "meta-llama/Llama-3.1-8B-Instruct-GGUF",
+    "modelId": "meta-llama/Llama-3.1-8B-Instruct-GGUF",
+    "author": "meta-llama",
+    "gated": "manual",
+    "private": false,
+    "downloads": 96044,
+    "likes": 1290,
+    "lastModified": "2026-02-02T17:00:00.000Z",
+    "tags": ["gguf", "llama"],
+    "gguf": {"architecture": "llama", "context_length": 131072, "total": 8030261248}
+  },
+  {
+    "_id": "000000000000000000000003",
+    "id": "gpt2",
+    "modelId": "gpt2",
+    "gated": null,
+    "private": false,
+    "downloads": 12,
+    "likes": 0,
+    "tags": ["gguf"]
+  }
+]

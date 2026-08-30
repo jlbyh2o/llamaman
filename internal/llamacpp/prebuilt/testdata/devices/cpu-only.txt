@@ -1,0 +1,2 @@
+Available devices:
+  CPU: 13th Gen Intel(R) Core(TM) i9-13900K (64027 MiB, 51204 MiB free)

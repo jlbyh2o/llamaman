@@ -1,0 +1,108 @@
+[
+  {
+    "id": 205310050,
+    "tag_name": "b10622",
+    "name": "b10622",
+    "draft": true,
+    "prerelease": true,
+    "created_at": "2026-02-11T10:44:03Z",
+    "published_at": null,
+    "assets": [],
+    "body": "b10622 (still uploading)\n"
+  },
+  {
+    "id": 205310001,
+    "tag_name": "v0.3.0",
+    "name": "v0.3.0",
+    "draft": false,
+    "prerelease": false,
+    "created_at": "2026-02-11T08:12:44Z",
+    "published_at": "2026-02-11T09:02:10Z",
+    "assets": [
+      {
+        "id": 301100001,
+        "name": "nightly-tag.txt",
+        "content_type": "text/plain",
+        "state": "uploaded",
+        "size": 8,
+        "digest": null,
+        "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/v0.3.0/nightly-tag.txt"
+      }
+    ],
+    "body": "## v0.3.0\n\nPinned build: `b10621`.\n"
+  },
+  {
+    "id": 205309912,
+    "tag_name": "b10621",
+    "name": "b10621",
+    "draft": false,
+    "prerelease": true,
+    "created_at": "2026-02-11T06:44:03Z",
+    "published_at": "2026-02-11T07:15:41Z",
+    "assets": [
+      {
+        "id": 301099001,
+        "name": "llama-b10621-bin-ubuntu-x64.tar.gz",
+        "content_type": "application/gzip",
+        "state": "uploaded",
+        "size": 41205760,
+        "digest": "sha256:0550fd38be02fcea410194978500a64094f630338fa5f1c9cd794996a6fceb23",
+        "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-ubuntu-x64.tar.gz"
+      }
+    ],
+    "body": "b10621\n"
+  },
+  {
+    "id": 205309611,
+    "tag_name": "b9999",
+    "name": "b9999",
+    "draft": false,
+    "prerelease": true,
+    "created_at": "2026-01-04T05:31:19Z",
+    "published_at": "2026-01-04T06:02:44Z",
+    "assets": [
+      {
+        "id": 301090001,
+        "name": "llama-b9999-bin-ubuntu-x64.tar.gz",
+        "content_type": "application/gzip",
+        "state": "uploaded",
+        "size": 40551424,
+        "digest": null,
+        "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b9999/llama-b9999-bin-ubuntu-x64.tar.gz"
+      }
+    ],
+    "body": "b9999\n"
+  },
+  {
+    "id": 205309888,
+    "tag_name": "b10620",
+    "name": "b10620",
+    "draft": false,
+    "prerelease": true,
+    "created_at": "2026-02-10T21:03:55Z",
+    "published_at": "2026-02-10T21:41:07Z",
+    "assets": [
+      {
+        "id": 301098001,
+        "name": "llama-b10620-bin-ubuntu-x64.tar.gz",
+        "content_type": "application/gzip",
+        "state": "uploaded",
+        "size": 41201664,
+        "digest": "sha256:d1fb8720d273a286f5e6caa99399ed9a804ffd1e82297b50ac909cd8073b7a49",
+        "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10620/llama-b10620-bin-ubuntu-x64.tar.gz"
+      }
+    ],
+    "body": "b10620\n"
+  },
+  {
+    "id": 205309100,
+    "tag_name": "test-build-2026-02-09",
+    "name": "test-build-2026-02-09",
+    "draft": false,
+    "prerelease": true,
+    "created_at": "2026-02-09T11:00:00Z",
+    "published_at": "2026-02-09T11:30:00Z",
+    "assets": [],
+    "body": "one-off build pushed by hand\n"
+  }
+]

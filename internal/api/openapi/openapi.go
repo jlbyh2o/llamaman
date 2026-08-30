@@ -399,6 +399,23 @@ func responseObject(sch *schemas, envelopeRef map[string]any, r api.Response) (m
 		}
 	}
 
+	// The alternative forms of the SAME status, chosen by `Accept` (see
+	// api.Response.AltMediaTypes). They are extra `content` entries rather than
+	// extra responses, because a status appears once in an OpenAPI operation.
+	if len(r.AltMediaTypes) > 0 {
+		content, _ := out["content"].(map[string]any)
+		if content == nil {
+			content = map[string]any{}
+			out["content"] = content
+		}
+		for _, mt := range r.AltMediaTypes {
+			if _, dup := content[mt]; dup {
+				continue
+			}
+			content[mt] = map[string]any{"schema": map[string]any{"type": "string"}}
+		}
+	}
+
 	return out, nil
 }
 

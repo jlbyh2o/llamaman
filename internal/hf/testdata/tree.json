@@ -1,0 +1,49 @@
+[
+  {"type": "file", "oid": "1a2b3c4d5e6f", "size": 1519, "path": ".gitattributes"},
+  {"type": "file", "oid": "aa11bb22cc33", "size": 8342, "path": "README.md"},
+  {
+    "type": "file",
+    "oid": "5f2b1c9d0e7a4b3c8d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c",
+    "size": 135,
+    "path": "Qwen3-8B-Q4_K_M.gguf",
+    "lfs": {
+      "oid": "5f2b1c9d0e7a4b3c8d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c",
+      "size": 4920736256,
+      "pointerSize": 135
+    }
+  },
+  {
+    "type": "file",
+    "oid": "1111111111111111111111111111111111111111111111111111111111111111",
+    "size": 135,
+    "path": "Qwen3-8B-Q8_0-00001-of-00002.gguf",
+    "lfs": {
+      "oid": "1111111111111111111111111111111111111111111111111111111111111111",
+      "size": 4294967296,
+      "pointerSize": 135
+    }
+  },
+  {
+    "type": "file",
+    "oid": "2222222222222222222222222222222222222222222222222222222222222222",
+    "size": 135,
+    "path": "Qwen3-8B-Q8_0-00002-of-00002.gguf",
+    "lfs": {
+      "oid": "2222222222222222222222222222222222222222222222222222222222222222",
+      "size": 4294967296,
+      "pointerSize": 135
+    }
+  },
+  {
+    "type": "file",
+    "oid": "3333333333333333333333333333333333333333333333333333333333333333",
+    "size": 135,
+    "path": "mmproj-Qwen3-8B-f16.gguf",
+    "lfs": {
+      "oid": "3333333333333333333333333333333333333333333333333333333333333333",
+      "size": 1048576,
+      "pointerSize": 135
+    }
+  },
+  {"type": "directory", "oid": "dddddddddddd", "size": 0, "path": "original"}
+]

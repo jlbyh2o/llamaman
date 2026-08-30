@@ -1,0 +1,55 @@
+----- common params -----
+
+-h,    --help, --usage                  print usage and exit
+       --version                        show version and build info
+       --completion-bash                print source-able bash completion script for llama.cpp
+       --verbose-prompt                 print a verbose prompt before generation (default: false)
+-t,    --threads N                      number of CPU threads to use during generation (default: -1)
+-C,    --cpu-mask M                     CPU affinity mask: arbitrarily long hex. Complements cpu-range (default: "")
+-c,    --ctx-size N                     size of the prompt context (default: 4096, 0 = loaded from model)
+-n,    --predict, --n-predict N         number of tokens to predict (default: -1, -1 = infinity)
+-b,    --batch-size N                   logical maximum batch size (default: 2048)
+-ub,   --ubatch-size N                  physical maximum batch size (default: 512)
+       --keep N                         number of tokens to keep from the initial prompt (default: 0)
+-fa,   --flash-attn [on|off|auto]       set Flash Attention use (default: auto)
+       --no-perf                        disable internal timings (default: false)
+-e,    --escape                         process escapes sequences (default: true)
+-dkvc, --dump-kv-cache                  verbose print of the KV cache
+-nkvo, --no-kv-offload                  disable KV offload
+-ctk,  --cache-type-k TYPE              KV cache data type for K (default: f16)
+-ctv,  --cache-type-v TYPE              KV cache data type for V (default: f16)
+-dt,   --defrag-thold N                 KV cache defragmentation threshold (default: 0.1)
+-np,   --parallel N                     number of parallel sequences to decode (default: 1)
+       --mlock                          force system to keep model in RAM
+       --no-mmap                        do not memory-map model
+-ngl,  --gpu-layers, --n-gpu-layers N   number of layers to store in VRAM
+       --fit [on|off]                   automatically fit the model to the available memory (default: on)
+-sm,   --split-mode {none,layer,row}    how to split the model across multiple GPUs
+-ts,   --tensor-split N0,N1,N2,...      fraction of the model to offload to each GPU
+-mg,   --main-gpu INDEX                 the GPU to use for the model (default: 0)
+-dev,  --device <dev1,dev2,..>          comma-separated list of devices to use for offloading
+       --list-devices                   print list of available devices and exit
+       --override-tensor, -ot <pattern> override tensor buffer type
+-m,    --model FNAME                    model path (default: `models/$filename`)
+-md,   --model-draft FNAME              draft model for speculative decoding
+-mmproj FILE                            path to a multimodal projector file
+       --no-mmproj                      explicitly disable multimodal projector
+       --chat-template JINJA_TEMPLATE   set custom Jinja chat template
+       --jinja                          use jinja template for chat (default: disabled)
+
+----- server params -----
+
+       --host HOST                      ip address to listen (default: 127.0.0.1)
+       --port PORT                      port to listen (default: 8080)
+       --path PATH                      path to serve static files from (default: )
+       --no-webui                       disable the Web UI (default: enabled)
+-a,    --alias STRING                   set alias for model name
+       --api-key KEY                    API key to use for authentication (default: none)
+       --props                          enable changing global properties via POST /props (default: disabled)
+       --slots                          enable slots monitoring endpoint (default: disabled)
+       --metrics                        enable prometheus compatible metrics endpoint (default: disabled)
+       --no-slots                       disable slots monitoring endpoint
+       --cont-batching                  enable continuous batching (a.k.a dynamic batching) (default: enabled)
+-np,   --parallel N                     number of parallel sequences to decode (default: 1)
+       --draft-max, --draft N           number of tokens to draft for speculative decoding (default: 16)
+       --draft-min N                    minimum number of draft tokens to use for speculative decoding (default: 0)

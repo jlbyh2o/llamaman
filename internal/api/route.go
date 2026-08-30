@@ -44,6 +44,16 @@ type Response struct {
 	// MediaType overrides application/json for a response that is not JSON —
 	// the SSE stream, and the sanitized HTML of `GET /hf/card/{repo...}`.
 	MediaType string
+	// AltMediaTypes are the OTHER forms this same status can take, chosen by
+	// the request's `Accept` header rather than by a different status.
+	//
+	// Two endpoints in section 3 are written that way and both say so in the
+	// same words: `GET /llamacpp/versions/{id}/log` is "plain text; SSE for a
+	// live tail", and `GET /system/journal` is "JSON lines, or SSE when
+	// `Accept: text/event-stream`". A second Response with the same status
+	// could not express it — a status appears once in an OpenAPI operation — so
+	// the alternatives are listed here and become extra `content` entries.
+	AltMediaTypes []string
 }
 
 // QueryParam documents one `?key=` a route reads. The registry carries these

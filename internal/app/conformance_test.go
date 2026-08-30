@@ -105,6 +105,53 @@ func TestAPIConformance(t *testing.T) {
 	expectStatus(t, c.do(http.MethodDelete, "/api/v1/instances/"+noSuchID, "", nil),
 		http.StatusNotFound)
 
+	// --- section 3.5, the rows that need no network. The list and the active
+	// build are ordinary reads; the four id-addressed operations run against an
+	// id that names no row, which is the 404 each one documents and the proof
+	// that each reached the lifecycle SERVICE rather than the 503 a daemon
+	// built without one would answer.
+	expectStatus(t, c.do(http.MethodGet, "/api/v1/llamacpp/versions", "", nil), http.StatusOK)
+	expectStatus(t, c.do(http.MethodGet, "/api/v1/llamacpp/active", "", nil), http.StatusNotFound)
+	for _, path := range []struct {
+		method string
+		target string
+	}{
+		{http.MethodGet, "/api/v1/llamacpp/versions/" + noSuchID},
+		{http.MethodGet, "/api/v1/llamacpp/versions/" + noSuchID + "/log"},
+		{http.MethodPost, "/api/v1/llamacpp/versions/" + noSuchID + "/cancel"},
+		{http.MethodPost, "/api/v1/llamacpp/versions/" + noSuchID + "/retry"},
+		{http.MethodDelete, "/api/v1/llamacpp/versions/" + noSuchID},
+	} {
+		expectStatus(t, c.do(path.method, path.target, "", nil), http.StatusNotFound)
+	}
+
+	// The plan endpoint of section 6.3, asked about a CUSTOM build named by a
+	// 40-hex commit. That is the one shape that resolves with no network at all:
+	// section 6.2's custom row needs `git ls-remote` only when the ref is not
+	// already a commit. Everything the answer adds — the toolchain probe, the
+	// CUDA architectures, the free-space check — is a fact about this host.
+	expectStatus(t, c.do(http.MethodGet,
+		"/api/v1/llamacpp/plan?channel=custom&git_ref=0123456789abcdef0123456789abcdef01234567",
+		"", nil), http.StatusOK)
+	// A git URL this daemon will not clone is refused before anything is
+	// resolved, which is the 422 that route documents.
+	expectStatus(t, c.do(http.MethodGet,
+		"/api/v1/llamacpp/plan?channel=custom&git_url=ext%3A%3Ash&git_ref=0123456789abcdef0123456789abcdef01234567",
+		"", nil), http.StatusUnprocessableEntity)
+
+	// --- section 3.6's two credential triples. They need no network while no
+	// token is presented, and they are the proof that internal/secrets is wired:
+	// a daemon whose credential store was never constructed answers all of them
+	// `503 internal_error`, which no route in this document lists.
+	//
+	// The remote Hub endpoints are deliberately NOT driven here: every one of
+	// them is an HTTP call to huggingface.co, and section 15 allows a live call
+	// only inside an explicitly named, environment-gated smoke test.
+	expectStatus(t, c.do(http.MethodGet, "/api/v1/hf/token", "", nil), http.StatusOK)
+	expectStatus(t, c.do(http.MethodGet, "/api/v1/github/token", "", nil), http.StatusOK)
+	expectStatus(t, c.do(http.MethodDelete, "/api/v1/hf/token", "", nil), http.StatusNoContent)
+	expectStatus(t, c.do(http.MethodDelete, "/api/v1/github/token", "", nil), http.StatusNoContent)
+
 	// --- the two answers the fallback owns, which the checker treats as
 	// documented by construction: a path no route matches, and a method no
 	// route serves on a path that exists.

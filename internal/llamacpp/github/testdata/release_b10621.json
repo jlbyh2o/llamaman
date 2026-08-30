@@ -1,0 +1,64 @@
+{
+  "url": "https://api.github.com/repos/ggml-org/llama.cpp/releases/205309912",
+  "html_url": "https://github.com/ggml-org/llama.cpp/releases/tag/b10621",
+  "id": 205309912,
+  "author": {
+    "login": "github-actions[bot]",
+    "id": 41898282,
+    "type": "Bot"
+  },
+  "tag_name": "b10621",
+  "target_commitish": "master",
+  "name": "b10621",
+  "draft": false,
+  "prerelease": true,
+  "created_at": "2026-02-11T06:44:03Z",
+  "published_at": "2026-02-11T07:15:41Z",
+  "assets": [
+    {
+      "url": "https://api.github.com/repos/ggml-org/llama.cpp/releases/assets/301099001",
+      "id": 301099001,
+      "name": "llama-b10621-bin-ubuntu-x64.tar.gz",
+      "label": null,
+      "content_type": "application/gzip",
+      "state": "uploaded",
+      "size": 41205760,
+      "digest": "sha256:0550fd38be02fcea410194978500a64094f630338fa5f1c9cd794996a6fceb23",
+      "download_count": 5310,
+      "created_at": "2026-02-11T07:14:02Z",
+      "updated_at": "2026-02-11T07:14:29Z",
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-ubuntu-x64.tar.gz"
+    },
+    {
+      "url": "https://api.github.com/repos/ggml-org/llama.cpp/releases/assets/301099002",
+      "id": 301099002,
+      "name": "llama-b10621-bin-ubuntu-arm64.tar.gz",
+      "label": null,
+      "content_type": "application/gzip",
+      "state": "uploaded",
+      "size": 38994432,
+      "digest": "sha256:0fe55b95c692633977bc9558ecac1ba5a410efe4652c09b01c8e6861d496ec1a",
+      "download_count": 611,
+      "created_at": "2026-02-11T07:14:31Z",
+      "updated_at": "2026-02-11T07:14:55Z",
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-ubuntu-arm64.tar.gz"
+    },
+    {
+      "url": "https://api.github.com/repos/ggml-org/llama.cpp/releases/assets/301099003",
+      "id": 301099003,
+      "name": "llama-b10621-bin-win-cuda-12.4-x64.zip",
+      "label": null,
+      "content_type": "application/zip",
+      "state": "uploaded",
+      "size": 512884736,
+      "digest": null,
+      "download_count": 8842,
+      "created_at": "2026-02-11T07:15:01Z",
+      "updated_at": "2026-02-11T07:15:38Z",
+      "browser_download_url": "https://github.com/ggml-org/llama.cpp/releases/download/b10621/llama-b10621-bin-win-cuda-12.4-x64.zip"
+    }
+  ],
+  "tarball_url": "https://api.github.com/repos/ggml-org/llama.cpp/tarball/b10621",
+  "zipball_url": "https://api.github.com/repos/ggml-org/llama.cpp/zipball/b10621",
+  "body": "b10621\n\n* server : fix slot restore with a draft model (#18422)\n"
+}

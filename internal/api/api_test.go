@@ -119,6 +119,73 @@ func TestRoutingTable(t *testing.T) {
 		"GET /api/v1/instances/{id}":    {AuthSession, "getInstance"},
 		"PATCH /api/v1/instances/{id}":  {AuthSession, "patchInstance"},
 		"DELETE /api/v1/instances/{id}": {AuthSession, "deleteInstance"},
+
+		// Section 3.5, complete: all twelve rows of the llama.cpp lifecycle
+		// table. `…/plan` is section 6.3's whole subject and `…/retry` is the
+		// operation section 2.5's reuse-and-reset row and D4 name, so neither is
+		// a convenience that could be left out.
+		"GET /api/v1/llamacpp/active":                  {AuthSession, "getActiveLlamacpp"},
+		"GET /api/v1/llamacpp/versions":                {AuthSession, "listLlamacppVersions"},
+		"POST /api/v1/llamacpp/versions":               {AuthSession, "installLlamacppVersion"},
+		"GET /api/v1/llamacpp/versions/{id}":           {AuthSession, "getLlamacppVersion"},
+		"DELETE /api/v1/llamacpp/versions/{id}":        {AuthSession, "deleteLlamacppVersion"},
+		"POST /api/v1/llamacpp/versions/{id}/cancel":   {AuthSession, "cancelLlamacppVersion"},
+		"POST /api/v1/llamacpp/versions/{id}/retry":    {AuthSession, "retryLlamacppVersion"},
+		"GET /api/v1/llamacpp/versions/{id}/log":       {AuthSession, "getLlamacppVersionLog"},
+		"POST /api/v1/llamacpp/versions/{id}/activate": {AuthSession, "activateLlamacppVersion"},
+		"POST /api/v1/llamacpp/rollback":               {AuthSession, "rollbackLlamacpp"},
+		"GET /api/v1/llamacpp/releases":                {AuthSession, "listLlamacppReleases"},
+		"GET /api/v1/llamacpp/plan":                    {AuthSession, "planLlamacppInstall"},
+
+		// Section 3.6, complete: the remote Hub surface and the two validating
+		// credential triples. Every repo-scoped path puts the verb IN FRONT of
+		// the `{repo...}` wildcard, because ServeMux panics at registration on a
+		// multi-segment wildcard that is not final.
+		"GET /api/v1/hf/search":          {AuthSession, "searchHF"},
+		"GET /api/v1/hf/model/{repo...}": {AuthSession, "getHFModel"},
+		"GET /api/v1/hf/tree/{repo...}":  {AuthSession, "getHFTree"},
+		"GET /api/v1/hf/card/{repo...}":  {AuthSession, "getHFCard"},
+		"GET /api/v1/hf/peek/{repo...}":  {AuthSession, "peekHFFile"},
+		"GET /api/v1/hf/token":           {AuthSession, "getHFToken"},
+		"PUT /api/v1/hf/token":           {AuthSession, "putHFToken"},
+		"DELETE /api/v1/hf/token":        {AuthSession, "deleteHFToken"},
+		"GET /api/v1/github/token":       {AuthSession, "getGitHubToken"},
+		"PUT /api/v1/github/token":       {AuthSession, "putGitHubToken"},
+		"DELETE /api/v1/github/token":    {AuthSession, "deleteGitHubToken"},
+
+		// Section 3.7, complete: the local model catalog and the cache roots,
+		// scans and strays beside it. Every row of that table is here — the
+		// service behind them exists, and the two long actions (scan, verify)
+		// plus the delete answer 202 with a job receipt.
+		"GET /api/v1/models":                     {AuthSession, "listModels"},
+		"GET /api/v1/models/{id}":                {AuthSession, "getModel"},
+		"GET /api/v1/models/{id}/metadata":       {AuthSession, "getModelMetadata"},
+		"GET /api/v1/models/{id}/delete-preview": {AuthSession, "previewModelDelete"},
+		"DELETE /api/v1/models/{id}":             {AuthSession, "deleteModel"},
+		"POST /api/v1/models/{id}/verify":        {AuthSession, "verifyModel"},
+		"POST /api/v1/models/{id}/pair-mmproj":   {AuthSession, "pairModelMmproj"},
+		"GET /api/v1/cache/roots":                {AuthSession, "listCacheRoots"},
+		"POST /api/v1/cache/roots":               {AuthSession, "addCacheRoot"},
+		"POST /api/v1/cache/roots/{id}/promote":  {AuthSession, "promoteCacheRoot"},
+		"DELETE /api/v1/cache/roots/{id}":        {AuthSession, "detachCacheRoot"},
+		"POST /api/v1/cache/scan":                {AuthSession, "scanCache"},
+		"GET /api/v1/cache/scans/{id}":           {AuthSession, "getCacheScan"},
+		"GET /api/v1/cache/strays":               {AuthSession, "listStrays"},
+		"DELETE /api/v1/cache/strays/{id}":       {AuthSession, "deleteStray"},
+		"POST /api/v1/cache/strays/{id}/dismiss": {AuthSession, "dismissStray"},
+
+		// Section 3.8, complete: the download queue. `POST /downloads` is the
+		// one long action here and it is idempotent (D65), so a
+		// double-clicked Download replays into `200` rather than queuing a
+		// second one.
+		"GET /api/v1/downloads":              {AuthSession, "listDownloads"},
+		"POST /api/v1/downloads":             {AuthSession, "createDownload"},
+		"GET /api/v1/downloads/{id}":         {AuthSession, "getDownload"},
+		"PATCH /api/v1/downloads/{id}":       {AuthSession, "reorderDownload"},
+		"POST /api/v1/downloads/{id}/pause":  {AuthSession, "pauseDownload"},
+		"POST /api/v1/downloads/{id}/resume": {AuthSession, "resumeDownload"},
+		"POST /api/v1/downloads/{id}/retry":  {AuthSession, "retryDownload"},
+		"POST /api/v1/downloads/{id}/cancel": {AuthSession, "cancelDownload"},
 	}
 
 	got := map[string]struct {
@@ -437,3 +504,23 @@ func TestRequestLogNamesThePathWhenNothingMatched(t *testing.T) {
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// newRequest and serve are `do` split in two, for the tests that have to set a
+// header of their own — `Accept: text/event-stream` above all, which is how
+// section 3.5's build log and section 3.3's journal choose their form.
+func newRequest(method, target, body string) *http.Request {
+	var r *http.Request
+	if body == "" {
+		r = httptest.NewRequest(method, target, nil)
+	} else {
+		r = httptest.NewRequest(method, target, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+	}
+	r.AddCookie(&http.Cookie{Name: middleware.CookieCSRF, Value: "c"})
+	r.Header.Set(middleware.HeaderCSRF, "c")
+	return r
+}
+
+// contains is strings.Contains, named here so a test assertion reads as a
+// sentence about the response rather than about the standard library.
+func contains(haystack, needle string) bool { return strings.Contains(haystack, needle) }

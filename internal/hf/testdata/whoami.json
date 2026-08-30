@@ -1,0 +1,13 @@
+{
+  "type": "user",
+  "name": "example-user",
+  "fullname": "Example User",
+  "auth": {
+    "type": "access_token",
+    "accessToken": {
+      "displayName": "llamaman",
+      "role": "read",
+      "fineGrained": ["read-repos", "read-billing"]
+    }
+  }
+}

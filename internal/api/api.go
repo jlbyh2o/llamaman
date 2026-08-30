@@ -57,6 +57,45 @@ type Config struct {
 	// documented endpoints, and a build gap is reported, never faked.
 	Instances InstanceService
 
+	// Models serves the local-model and cache endpoints of section 3.7 —
+	// the catalog, the delete preview and its guards, projector pairing, cache
+	// roots, scans and strays. internal/models satisfies it. Nil answers 503,
+	// for the same reason.
+	Models ModelService
+
+	// Downloads serves the download endpoints of section 3.8 — the queue, the
+	// per-file progress, and pause, resume, retry, cancel and reorder.
+	// internal/hf/download satisfies it. Nil answers 503, for the same reason
+	// the fields around it do: they are documented endpoints, and a build gap
+	// is reported, never faked.
+	Downloads DownloadService
+
+	// Llamacpp serves all twelve rows of section 3.5: the active build, the
+	// version list and detail, the install POST, cancel, retry, the build log,
+	// activate, rollback, delete, the release listing and the acquisition plan.
+	// internal/llamacpp satisfies it. Nil answers those routes 503, for the same
+	// reason the fields above do: they are documented endpoints, and a build gap
+	// is reported, never faked.
+	Llamacpp LlamacppService
+
+	// HF serves the remote Hugging Face endpoints of section 3.6 — search,
+	// metadata, tree, card and the header peek. *hf.Client satisfies it. Nil
+	// answers 503, for the same reason the fields above do: they are documented
+	// endpoints, and a build gap is reported, never faked.
+	HF HFService
+
+	// LocalModels annotates those remote answers with what this host already
+	// holds (`local_model_id`). It is optional in a way HF is not: the remote
+	// endpoints are useful without the annotation, so a nil answers them
+	// unannotated rather than 503.
+	LocalModels LocalIndex
+
+	// HFToken and GitHubToken are section 3.6's two validating credential
+	// triples. Each seals its token through internal/secrets and returns
+	// presence, hint and validity only. Nil answers 503.
+	HFToken     TokenService
+	GitHubToken TokenService
+
 	// Events is the SSE transport mounted at `GET /api/v1/events`
 	// (section 3.14). It is internal/sse's Handler, which owns the handshake,
 	// the heartbeat and Last-Event-ID replay; this package owns only the route
@@ -144,6 +183,21 @@ func (a *API) register() error {
 		add(rt)
 	}
 	for _, rt := range a.instanceRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.llamacppRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.modelRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.downloadRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.hfRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.tokenRoutes() {
 		add(rt)
 	}
 	if a.cfg.Events != nil {

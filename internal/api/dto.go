@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,6 +52,55 @@ func TimePtr(ms *int64) *string {
 	}
 	s := Time(*ms)
 	return &s
+}
+
+// ptrOf is the shorthand a DTO conversion needs when a nullable wire field is
+// built from a value rather than from an already-nullable column.
+func ptrOf[T any](v T) *T { return &v }
+
+// queryInt64 reads a `?key=` integer, falling back to def for an absent or
+// unparseable value.
+//
+// An unparseable value is a fallback rather than a 400 on purpose, and only for
+// the parameters that use this: `?offset=`, `?limit=` and `?tail=` are paging
+// hints, and refusing to serve a log because a client sent `limit=abc` would
+// turn a typo into a blank screen. A parameter whose value CHANGES WHAT IS DONE
+// — a channel, a backend, a priority — is validated by the service instead and
+// answers 422.
+func queryInt64(r *http.Request, key string, def int64) int64 {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+// wantsEventStream reports whether the client asked for the SSE form of a route
+// that has one (section 3.3's journal, section 3.5's build log).
+func wantsEventStream(r *http.Request) bool {
+	return acceptsMediaType(r, "text/event-stream")
+}
+
+// wantsJSON reports whether the client asked for JSON on a route whose default
+// form is plain text. A bare `*/*` — what curl sends — is NOT a request for
+// JSON: the default form is the default precisely because it is what a person
+// at a terminal wants.
+func wantsJSON(r *http.Request) bool {
+	return acceptsMediaType(r, "application/json")
+}
+
+func acceptsMediaType(r *http.Request, want string) bool {
+	for _, part := range strings.Split(r.Header.Get("Accept"), ",") {
+		mt := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
+		if strings.EqualFold(mt, want) {
+			return true
+		}
+	}
+	return false
 }
 
 // List is the list envelope of section 3. It is generic so that `total` and

@@ -35,6 +35,17 @@ const (
 	// string internal/jobs writes into `jobs.error_code` for an unhandled
 	// worker error: one name for "we do not know what went wrong".
 	CodeInternalError = middleware.CodeInternalError
+
+	// CodeHFTokenInvalid and CodeGitHubTokenInvalid are the 422s of section
+	// 3.6's two credential PUTs: the PROVIDER refused the presented token.
+	//
+	// They live in this package rather than in a client package because the
+	// refusal is this layer's reading of a 401 from somewhere else. A network
+	// failure is deliberately NOT one of them — telling a user their working
+	// token is wrong because the Hub was briefly unreachable makes them delete
+	// a good credential.
+	CodeHFTokenInvalid     model.ErrorCode = "hf_token_invalid"
+	CodeGitHubTokenInvalid model.ErrorCode = "github_token_invalid"
 )
 
 // Error is one API error with the status it is answered with. It is the type a
@@ -198,6 +209,17 @@ func statusForCode(c model.ErrorCode) int {
 		model.CodeDownloadExists,
 		model.CodeSelfUpdateNotCancelable:
 		return http.StatusConflict
+	case model.CodeModelInUse, model.CodeRootIsPrimary:
+		// Section 3.7's two refusals to change state. Both describe a request
+		// that is well formed and currently impossible, which is what 409 means
+		// here — the caller can make it possible (stop using the model, promote
+		// another root) and try again.
+		return http.StatusConflict
+	case model.CodeRootNotWritable, model.CodeRootPathProtected:
+		// A path this host will not accept as a writable cache root. 422 rather
+		// than 400 for the same reason section 3.10's save-time refusals are:
+		// the body parsed, and what it named is the problem.
+		return http.StatusUnprocessableEntity
 	case CodeNotFound:
 		return http.StatusNotFound
 	case CodeBadRequest:

@@ -17,10 +17,14 @@ import (
 	"github.com/jlbyh2o/llamaman/internal/auth"
 	"github.com/jlbyh2o/llamaman/internal/buildinfo"
 	"github.com/jlbyh2o/llamaman/internal/events"
+	"github.com/jlbyh2o/llamaman/internal/hf"
 	"github.com/jlbyh2o/llamaman/internal/instances"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
+	"github.com/jlbyh2o/llamaman/internal/llamacpp"
+	"github.com/jlbyh2o/llamaman/internal/llamacpp/github"
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/netutil"
+	"github.com/jlbyh2o/llamaman/internal/secrets"
 	"github.com/jlbyh2o/llamaman/internal/settings"
 	"github.com/jlbyh2o/llamaman/internal/setup"
 	"github.com/jlbyh2o/llamaman/internal/sse"
@@ -45,10 +49,14 @@ type daemon struct {
 	hub         *events.Hub
 	recorder    *events.Recorder
 	queue       *jobs.Queue
+	secrets     *secrets.Service
+	hfClient    *hf.Client
 	auth        *auth.Service
 	setup       *setup.Service
 	instances   *instances.Service
 	supervisor  *supervisor.Supervisor
+	llamacpp    *llamacpp.Service
+	releases    *github.Client
 
 	// systemd is what step 6's probe learned: the control channel, the two
 	// polkit answers and journal readability. Its zero value is the F10
@@ -168,15 +176,22 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 			"through", applied[len(applied)-1].Filename())
 	}
 
-	// --- step 5: secret.key. internal/secrets owns the AES-GCM box and its
-	// 0600 key file; nothing here needs it yet.
-
 	// --- step 5 (settings half): built-in defaults plus `settings` rows.
 	d.settings = settings.New(settings.NewRegistry(), st)
 	if err := d.settings.Load(ctx); err != nil {
 		d.close()
 		return nil, fmt.Errorf("load settings: %w", err)
 	}
+
+	// --- step 5 (secrets half): `<state_dir>/secret.key` and the sealed
+	// credential store over it, then the Hugging Face client that reads the
+	// token through it on every request rather than capturing one here.
+	// Settings first, because the client's endpoint is one.
+	if err := d.buildSecrets(); err != nil {
+		d.close()
+		return nil, err
+	}
+	d.buildHub()
 
 	// --- step 5 (identity half): the authentication authority and the wizard.
 	// They are constructed before the port walk because step 8's setup claim
@@ -320,6 +335,16 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 		return nil, err
 	}
 	d.queue = q
+
+	// The llama.cpp lifecycle service and its three workers, plus the nightly
+	// maintenance worker. They are registered HERE rather than in serve()
+	// because §2.3's boot triage looks a worker up in the registry to move its
+	// domain row in the same transaction as the job row: a build interrupted by
+	// the previous boot must find its DomainWriter already in place.
+	if err := d.buildLlamacpp(); err != nil {
+		d.close()
+		return nil, err
+	}
 
 	apiHandler, err := d.buildAPI()
 	if err != nil {
@@ -654,6 +679,15 @@ func (d *daemon) buildAPI() (http.Handler, error) {
 		Sessions:    d.auth,
 		Setup:       d.setup,
 		Instances:   d.instances,
+		Llamacpp:    d.llamacpp,
+		HF:          d.hfClient,
+		LocalModels: localIndex{st: d.store},
+		HFToken: hfTokenService{
+			secrets: d.secrets, endpoint: d.hubEndpoint(), log: UserAgent,
+		},
+		GitHubToken: githubTokenService{
+			secrets: d.secrets, client: d.releases, agent: UserAgent,
+		},
 		Meta:        d,
 		Events:      stream,
 		Fallback:    ui,
