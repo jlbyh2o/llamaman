@@ -1,9 +1,9 @@
 # Llama Man build targets (DESIGN section 16.1).
 #
 # This skeleton implements the targets the code can actually run today: build,
-# go-build, ui-build, test, vet, lint, fmt and clean. The rest of section 16.1 —
-# dev, build-all, e2e, openapi, migrate-new, release-snapshot, install-local —
-# lands with the features they drive.
+# go-build, ui-build, test, vet, lint, fmt, openapi and clean. The rest of
+# section 16.1 — dev, build-all, e2e, migrate-new, release-snapshot,
+# install-local — lands with the features they drive.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := build
@@ -23,7 +23,7 @@ LDFLAGS := -s -w \
 	-X '$(BUILDINFO).Date=$(DATE)' \
 	-X '$(BUILDINFO).Channel=$(CHANNEL)'
 
-.PHONY: build go-build ui-build ui test vet lint fmt clean
+.PHONY: build go-build ui-build ui test vet lint fmt openapi clean
 
 ## build: the full artifact — UI first, then the binary that embeds it.
 build: ui-build go-build
@@ -69,6 +69,12 @@ lint: vet
 fmt:
 	gofmt -w ./cmd ./internal
 	cd ui && npm run format
+
+## openapi: regenerate api/openapi.json from the route registry (D43). The
+## generator is a test flag rather than a separate command because the routes
+## are declared by api.New; `go test ./...` runs the matching drift check.
+openapi:
+	go test ./internal/api/openapi -update
 
 ## clean: remove build output. The committed placeholder is restored by git.
 clean:

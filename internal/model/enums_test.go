@@ -115,6 +115,17 @@ func TestEveryEnumRejectsAWrongValue(t *testing.T) {
 			func(v string) bool { return WizardStepState(v).Valid() }},
 		{"PortReason", enumStrings(PortReasonValues()),
 			func(v string) bool { return PortReason(v).Valid() }},
+
+		// The FlagSet's three closed value sets (§2.8's `flags_json`). They are
+		// closed by this package alone — one JSON column carries them, so no SQL
+		// CHECK does — which is exactly why they are absent from ClosedEnums and
+		// present here.
+		{"NGLMode", enumStrings(NGLModeValues()),
+			func(v string) bool { return NGLMode(v).Valid() }},
+		{"FlashAttn", enumStrings(FlashAttnValues()),
+			func(v string) bool { return FlashAttn(v).Valid() }},
+		{"SplitMode", enumStrings(SplitModeValues()),
+			func(v string) bool { return SplitMode(v).Valid() }},
 	}
 
 	for _, tt := range tests {

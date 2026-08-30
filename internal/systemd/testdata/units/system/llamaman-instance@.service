@@ -1,0 +1,77 @@
+# llamaman-units: 1
+[Unit]
+Description=Llama Man instance %i (llama-server)
+Documentation=https://github.com/jlbyh2o/llamaman
+After=network-online.target
+Wants=network-online.target
+PartOf=llamaman-instances.target
+# `After=` with NO Wants=/Requires=/PartOf= on llamaman.service. Ordering only:
+# at a host boot the instance start job is sequenced after the daemon's start job
+# COMPLETES, which — because the daemon is Type=notify and sends READY=1 only
+# after migrations are applied — removes the schema-migration race. Because there
+# is no requirement dependency, a daemon that FAILS to start still lets every
+# instance proceed. Deliberately NOT PartOf=llamaman.service: instances must
+# survive daemon restarts and self-update.
+After=llamaman.service
+
+[Service]
+# This unit is content-free: it encodes no model path, no port and no flag. It
+# execs the llamaman binary as a launcher, which reads the instance row and
+# execve's llama-server. Editing an instance is a database write — no unit
+# regeneration and no daemon-reload.
+Type=exec
+User=llamaman
+Group=llamaman
+ExecStart=/usr/local/bin/llamaman instance-exec %i
+# D7: the supervisor is the only restarter, which is what makes all three
+# per-instance restart policies exact and data-driven. Because Restart= is `no`,
+# StartLimitIntervalSec=/StartLimitBurst= would be inert and are omitted; if they
+# are ever reintroduced they belong in [Unit], never [Service].
+Restart=no
+# Not a model-load timeout. Under Type=exec the unit is considered started once
+# execve succeeds; this value covers slow shutdown and restart bookkeeping only.
+# The actual load timeout is instances.start_timeout_sec, enforced by the
+# supervisor's health probe.
+TimeoutStartSec=900
+TimeoutStopSec=60
+# llama-server treats SIGINT as a clean shutdown that finishes in-flight slots.
+KillSignal=SIGINT
+KillMode=mixed
+FinalKillSignal=SIGKILL
+OOMPolicy=stop
+# StateDirectory= is declared here too, and not only on llamaman.service, for one
+# reason: it is what exports $STATE_DIRECTORY to `instance-exec`, whose first act
+# is to open <state_dir>/llamaman.db. The directory already exists and is already
+# owned by the service identity; this line only names it.
+StateDirectory=llamaman
+StateDirectoryMode=0750
+WorkingDirectory=%S/llamaman
+Slice=llamaman.slice
+SyslogIdentifier=llamaman-instance@%i
+# journald's default per-unit rate limit eats exactly the bursty llama.cpp load
+# output a user needs after a failed load.
+LogRateLimitIntervalSec=0
+LogRateLimitBurst=0
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65536
+# so --mlock works when the user enables it
+LimitMEMLOCK=infinity
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=no
+ProtectKernelTunables=yes
+RestrictSUIDSGID=yes
+MemoryAccounting=yes
+# CPUAccounting= is inert on systemd 258 and newer, which accounts CPU
+# unconditionally under cgroup v2 and logs one "option has been removed" notice
+# per load. It stays because it is still load-bearing on the older systemd this
+# project supports, and a per-boot notice is cheaper than silently losing CPU
+# figures on those hosts.
+CPUAccounting=yes
+# PrivateDevices is deliberately ABSENT: it hides /dev/nvidia* and /dev/nvidiactl
+# and breaks every CUDA instance with an opaque error.
+
+[Install]
+WantedBy=llamaman-instances.target

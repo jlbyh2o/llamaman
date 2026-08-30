@@ -1,1 +1,2844 @@
-{}
+{
+  "components": {
+    "schemas": {
+      "CreateInstanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "autostart": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft_model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "extra_flags": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flags": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FlagSet"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "internal_port": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mmproj_model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "public_port": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "restart_max": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "restart_policy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restart_window_sec": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "model_id",
+          "name"
+        ],
+        "type": "object",
+        "x-go-type": "api.CreateInstanceRequest"
+      },
+      "CreateInstanceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "instance": {
+            "$ref": "#/components/schemas/InstanceDTO"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/WarningDTO"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "instance",
+          "warnings"
+        ],
+        "type": "object",
+        "x-go-type": "api.CreateInstanceResponse"
+      },
+      "DeleteInstanceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "hints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "purged": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hints",
+          "purged"
+        ],
+        "type": "object",
+        "x-go-type": "api.DeleteInstanceResponse"
+      },
+      "DraftFlags": {
+        "additionalProperties": false,
+        "properties": {
+          "ctx_size": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "n_gpu_layers": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "n_max": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "n_min": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "p_min": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "model.DraftFlags"
+      },
+      "Error": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "x-go-type": "model.Error"
+      },
+      "ErrorEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/Error"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object",
+        "x-go-type": "model.ErrorEnvelope"
+      },
+      "FlagSet": {
+        "additionalProperties": false,
+        "properties": {
+          "alias": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "batch_size": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cache_reuse": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cache_type_k": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cache_type_v": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chat_template": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chat_template_file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cont_batching": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "cpu_mask": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ctx_size": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "defrag_thold": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "device_filter": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_uuids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftFlags"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "embedding": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "flash_attn": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "jinja": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "log_verbosity": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "main_gpu": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "metrics_endpoint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "mlock": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "n_gpu_layers": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NGpuLayers"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "n_keep": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "n_predict": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "no_mmap": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "numa": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parallel": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pooling": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prio": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "props_endpoint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "rerank": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "rope_freq_base": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "rope_freq_scale": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "rope_scaling": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slot_save_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "slots_endpoint": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "split_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tensor_split": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "threads": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "threads_batch": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ubatch_size": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "yarn_attn_factor": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "yarn_ext_factor": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "type": "object",
+        "x-go-type": "model.FlagSet"
+      },
+      "Health": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "type": "object",
+        "x-go-type": "api.Health"
+      },
+      "InstanceDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_mode": {
+            "type": "string"
+          },
+          "autostart": {
+            "type": "boolean"
+          },
+          "config_hash": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "desired_state": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft_model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft_unverified": {
+            "type": "boolean"
+          },
+          "draft_validation": {
+            "type": "string"
+          },
+          "extra_flags": {
+            "type": "string"
+          },
+          "flags": {
+            "$ref": "#/components/schemas/FlagSet"
+          },
+          "generation": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inhibit_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "inhibited": {
+            "type": "boolean"
+          },
+          "internal_port": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "mmproj_model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "public_port": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "restart_max": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "restart_policy": {
+            "type": "string"
+          },
+          "restart_required": {
+            "type": "boolean"
+          },
+          "restart_window_sec": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stale_version": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InstanceStatusDTO"
+          },
+          "unit_name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "auth_mode",
+          "autostart",
+          "config_hash",
+          "created_at",
+          "desired_state",
+          "draft_unverified",
+          "draft_validation",
+          "extra_flags",
+          "flags",
+          "generation",
+          "id",
+          "inhibited",
+          "internal_port",
+          "name",
+          "public_port",
+          "restart_max",
+          "restart_policy",
+          "restart_required",
+          "restart_window_sec",
+          "stale_version",
+          "status",
+          "unit_name",
+          "updated_at"
+        ],
+        "type": "object",
+        "x-go-type": "api.InstanceDTO"
+      },
+      "InstanceDetailDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "active_version_id": {
+            "type": "string"
+          },
+          "argv": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "instance": {
+            "$ref": "#/components/schemas/InstanceDTO"
+          },
+          "starts": {
+            "items": {
+              "$ref": "#/components/schemas/InstanceStartDTO"
+            },
+            "type": "array"
+          },
+          "unknown_flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/WarningDTO"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "active_version_id",
+          "argv",
+          "instance",
+          "starts",
+          "unknown_flags",
+          "warnings"
+        ],
+        "type": "object",
+        "x-go-type": "api.InstanceDetailDTO"
+      },
+      "InstanceStartDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "argv": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "at": {
+            "type": "string"
+          },
+          "config_hash": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "object"
+          },
+          "effective_config_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exit_code": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "llamacpp_version_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "override": {
+            "type": "object"
+          },
+          "ready_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trigger": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "argv",
+          "at",
+          "config_hash",
+          "detail",
+          "id",
+          "override",
+          "trigger"
+        ],
+        "type": "object",
+        "x-go-type": "api.InstanceStartDTO"
+      },
+      "InstanceStatusDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "applied_config_hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ctx_size": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "exe_version_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gpu_attribution": {
+            "type": "string"
+          },
+          "health_code": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_change_at": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_exit_code": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_health_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "main_pid": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ready_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requests_served": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "rss_bytes": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "slots_busy": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "slots_total": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "systemd_active": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "systemd_result": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "systemd_sub": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vram_bytes": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "gpu_attribution",
+          "last_change_at",
+          "state"
+        ],
+        "type": "object",
+        "x-go-type": "api.InstanceStatusDTO"
+      },
+      "List[github.com/jlbyh2o/llamaman/internal/api.InstanceDTO]": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InstanceDTO"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object",
+        "x-go-type": "api.List[github.com/jlbyh2o/llamaman/internal/api.InstanceDTO]"
+      },
+      "List[github.com/jlbyh2o/llamaman/internal/api.SessionDTO]": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SessionDTO"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object",
+        "x-go-type": "api.List[github.com/jlbyh2o/llamaman/internal/api.SessionDTO]"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object",
+        "x-go-type": "api.LoginRequest"
+      },
+      "Meta": {
+        "additionalProperties": false,
+        "properties": {
+          "claimed": {
+            "type": "boolean"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "setup_complete": {
+            "type": "boolean"
+          },
+          "ui_port": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "claimed",
+          "commit",
+          "setup_complete",
+          "ui_port",
+          "version"
+        ],
+        "type": "object",
+        "x-go-type": "api.Meta"
+      },
+      "NGpuLayers": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object",
+        "x-go-type": "model.NGpuLayers"
+      },
+      "PasswordChangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "current",
+          "next"
+        ],
+        "type": "object",
+        "x-go-type": "api.PasswordChangeRequest"
+      },
+      "PatchInstanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft_model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "extra_flags": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "flags": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FlagSet"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "generation": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "internal_port": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mmproj_model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "public_port": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "restart_max": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "restart_policy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restart_window_sec": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "generation"
+        ],
+        "type": "object",
+        "x-go-type": "api.PatchInstanceRequest"
+      },
+      "PatchInstanceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "instance": {
+            "$ref": "#/components/schemas/InstanceDTO"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/WarningDTO"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "instance",
+          "warnings"
+        ],
+        "type": "object",
+        "x-go-type": "api.PatchInstanceResponse"
+      },
+      "SessionDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_seen_at": {
+            "type": "string"
+          },
+          "user_agent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "created_at",
+          "current",
+          "expires_at",
+          "id",
+          "last_seen_at"
+        ],
+        "type": "object",
+        "x-go-type": "api.SessionDTO"
+      },
+      "SessionStateDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "setup_complete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authenticated",
+          "setup_complete"
+        ],
+        "type": "object",
+        "x-go-type": "api.SessionStateDTO"
+      },
+      "SetupPasswordRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "type": "object",
+        "x-go-type": "api.SetupPasswordRequest"
+      },
+      "SetupSkipRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "step": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step"
+        ],
+        "type": "object",
+        "x-go-type": "api.SetupSkipRequest"
+      },
+      "SetupStateDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "active_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "claimed": {
+            "type": "boolean"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WizardStepDTO"
+            },
+            "type": "array"
+          },
+          "token_required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "claimed",
+          "complete",
+          "steps",
+          "token_required"
+        ],
+        "type": "object",
+        "x-go-type": "api.SetupStateDTO"
+      },
+      "WarningDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "x-go-type": "api.WarningDTO"
+      },
+      "WizardStepDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "type": "boolean"
+          },
+          "skippable": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "step": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "blocked",
+          "skippable",
+          "state",
+          "step"
+        ],
+        "type": "object",
+        "x-go-type": "api.WizardStepDTO"
+      }
+    },
+    "securitySchemes": {
+      "csrfToken": {
+        "description": "Double-submit echo of the non-HttpOnly `lm_csrf` cookie. Required on every non-GET of a session endpoint.",
+        "in": "header",
+        "name": "X-CSRF-Token",
+        "type": "apiKey"
+      },
+      "sessionCookie": {
+        "description": "`<session_id>.<secret>`; HttpOnly, SameSite=Lax, Path=/, Secure only over TLS. Only sha256(secret) is stored.",
+        "in": "cookie",
+        "name": "lm_session",
+        "type": "apiKey"
+      },
+      "setupToken": {
+        "description": "The one-time claim token, required from every non-loopback caller until the admin account exists (D38).",
+        "in": "header",
+        "name": "X-Setup-Token",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "The Llama Man management API. Generated from the route registry in internal/api; do not hand-edit (DESIGN section 3, D43).",
+    "title": "Llama Man",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Authenticated. `lm_session` and `lm_csrf` are set."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The password is wrong, or this host has no admin account.",
+            "x-error-codes": [
+              "bad_credentials"
+            ]
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "This address has exhausted its login attempts (SPEC section 4). `details.retry_after_sec` says for how long.",
+            "x-error-codes": [
+              "locked_out"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [],
+        "summary": "Exchange the admin password for a session cookie and a CSRF cookie.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "The session is revoked and both cookies are cleared."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The CSRF double-submit, Origin or Sec-Fetch-Site check failed.",
+            "x-error-codes": [
+              "csrf_failed"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "This host has not been claimed yet. The SPA routes to the wizard on this code alone.",
+            "x-error-codes": [
+              "setup_required"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "csrfToken": [],
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Revoke this session and clear its cookies.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/password": {
+      "post": {
+        "operationId": "changePassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The password was changed and every other session was revoked."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The new password does not meet the minimum length.",
+            "x-error-codes": [
+              "password_invalid"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The current password is wrong.",
+            "x-error-codes": [
+              "bad_credentials"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The CSRF double-submit, Origin or Sec-Fetch-Site check failed.",
+            "x-error-codes": [
+              "csrf_failed"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "This host has not been claimed yet. The SPA routes to the wizard on this code alone.",
+            "x-error-codes": [
+              "setup_required"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "csrfToken": [],
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Change the admin password; every other session is revoked.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "operationId": "getAuthSession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStateDTO"
+                }
+              }
+            },
+            "description": "The session state of this request."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [],
+        "summary": "Whether this request carries a session, whether the host is set up, and when the session expires.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "operationId": "listSessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/List[github.com/jlbyh2o/llamaman/internal/api.SessionDTO]"
+                }
+              }
+            },
+            "description": "Every session that is neither revoked nor expired."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "This host has not been claimed yet. The SPA routes to the wizard on this code alone.",
+            "x-error-codes": [
+              "setup_required"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "The active admin sessions, with address, user agent and last-seen time.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
+        "operationId": "revokeSession",
+        "parameters": [
+          {
+            "description": "Path segment.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The session is revoked."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The CSRF double-submit, Origin or Sec-Fetch-Site check failed.",
+            "x-error-codes": [
+              "csrf_failed"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No active session has that id.",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "This host has not been claimed yet. The SPA routes to the wizard on this code alone.",
+            "x-error-codes": [
+              "setup_required"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "csrfToken": [],
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Revoke one session — a device the operator no longer uses, or their own.",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "operationId": "streamEvents",
+        "parameters": [
+          {
+            "description": "Comma-separated topics to subscribe to. Empty means every topic. One of: instances, downloads, llamacpp, gpu, bench, jobs, events, notifications.",
+            "in": "query",
+            "name": "topics",
+            "required": false,
+            "schema": {
+              "enum": [
+                "instances",
+                "downloads",
+                "llamacpp",
+                "gpu",
+                "bench",
+                "jobs",
+                "events",
+                "notifications"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "An event stream of `event: <topic>` / `id: <ulid>` / `data: {…}` frames, a `retry: 3000` directive and a 20 s `:keepalive` comment."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unrecognized entry in `?topics=`.",
+            "x-error-codes": [
+              "invalid_topic"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "This host has not been claimed yet. The SPA routes to the wizard on this code alone.",
+            "x-error-codes": [
+              "setup_required"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Server-Sent Events. `?topics=` filters the stream; `Last-Event-ID` replays the `events` topic from the durable log.",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/v1/instances": {
+      "get": {
+        "operationId": "listInstances",
+        "parameters": [
+          {
+            "description": "Include soft-deleted instances. They keep their start history and accounting but hold neither their name nor their ports (D68).",
+            "in": "query",
+            "name": "include_deleted",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/List[github.com/jlbyh2o/llamaman/internal/api.InstanceDTO]"
+                }
+              }
+            },
+            "description": "Every instance this host manages."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "This host has not been claimed yet. The SPA routes to the wizard on this code alone.",
+            "x-error-codes": [
+              "setup_required"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Config joined with status, plus the four derived flags. Soft-deleted instances are excluded unless ?include_deleted=true.",
+        "tags": [
+          "instances"
+        ]
+      },
+      "post": {
+        "operationId": "createInstance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInstanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateInstanceResponse"
+                }
+              }
+            },
+            "description": "The instance was created. `warnings` may carry a deferred draft check."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The CSRF double-submit, Origin or Sec-Fetch-Site check failed.",
+            "x-error-codes": [
+              "csrf_failed"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Another live instance already has this name.",
+            "x-error-codes": [
+              "instance_name_taken"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The configuration was refused: a name that is not a legal unit id, a port that breaks one of the section 2.8 rules, a draft model whose vocabulary differs, `-ngl auto` with an explicit tensor split, an `extra_flags` override of a flag the renderer owns, or a model that does not exist.",
+            "x-error-codes": [
+              "bad_flags",
+              "draft_vocab_mismatch",
+              "extra_flag_forbidden",
+              "instance_name_invalid",
+              "model_missing",
+              "ngl_auto_conflict",
+              "port_unavailable"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "csrfToken": [],
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Create an instance. Ports are auto-allocated when omitted and validated against the section 2.8 rules.",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/instances/{id}": {
+      "delete": {
+        "operationId": "deleteInstance",
+        "parameters": [
+          {
+            "description": "Path segment.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Hard delete: the row and all of its history and accounting cascade away. That history is the one thing in this system that cannot be recomputed.",
+            "in": "query",
+            "name": "purge",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Leave this instance's `token_instances` scope rows in place.",
+            "in": "query",
+            "name": "keep_tokens",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteInstanceResponse"
+                }
+              }
+            },
+            "description": "The instance was deleted. `hints` carries any command the daemon could not run itself."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The CSRF double-submit, Origin or Sec-Fetch-Site check failed.",
+            "x-error-codes": [
+              "csrf_failed"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No instance has this id.",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "This host has not been claimed yet. The SPA routes to the wizard on this code alone.",
+            "x-error-codes": [
+              "setup_required"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "csrfToken": [],
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Soft delete: stop and disable the unit, close the listener, stamp deleted_at, keep every row. ?purge=true is the explicit hard delete.",
+        "tags": [
+          "instances"
+        ]
+      },
+      "get": {
+        "operationId": "getInstance",
+        "parameters": [
+          {
+            "description": "Path segment.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceDetailDTO"
+                }
+              }
+            },
+            "description": "The instance."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No instance has this id.",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "This host has not been claimed yet. The SPA routes to the wizard on this code alone.",
+            "x-error-codes": [
+              "setup_required"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "One instance, with its rendered argv and its last five starts.",
+        "tags": [
+          "instances"
+        ]
+      },
+      "patch": {
+        "operationId": "patchInstance",
+        "parameters": [
+          {
+            "description": "Path segment.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchInstanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatchInstanceResponse"
+                }
+              }
+            },
+            "description": "The updated instance, including `restart_required`."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The CSRF double-submit, Origin or Sec-Fetch-Site check failed.",
+            "x-error-codes": [
+              "csrf_failed"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No instance has this id.",
+            "x-error-codes": [
+              "not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The instance was edited by someone else, or the requested name is taken by another live instance.",
+            "x-error-codes": [
+              "conflict_generation",
+              "instance_name_taken"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The edited configuration was refused; see createInstance for the codes.",
+            "x-error-codes": [
+              "bad_flags",
+              "draft_vocab_mismatch",
+              "extra_flag_forbidden",
+              "instance_name_invalid",
+              "model_missing",
+              "ngl_auto_conflict",
+              "port_unavailable"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "csrfToken": [],
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Edit an instance. The body must carry the `generation` the client read.",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/api/v1/meta": {
+      "get": {
+        "operationId": "getMeta",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Meta"
+                }
+              }
+            },
+            "description": "This daemon's identity and claim state."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The daemon is up but has not finished resolving its own identity.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [],
+        "summary": "Version, claim state and the port the management listener landed on — what install.sh polls.",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/api/v1/setup/complete": {
+      "post": {
+        "operationId": "completeSetup",
+        "responses": {
+          "204": {
+            "description": "The wizard is complete."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The CSRF double-submit, Origin or Sec-Fetch-Site check failed.",
+            "x-error-codes": [
+              "csrf_failed"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A non-skippable step is still unfinished.",
+            "x-error-codes": [
+              "wizard_step_locked"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "csrfToken": [],
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Finish the wizard. Refused while a non-skippable step is unfinished.",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/password": {
+      "post": {
+        "operationId": "setupPassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The host is claimed and the caller is logged in."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The password does not meet the minimum length.",
+            "x-error-codes": [
+              "password_invalid"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A non-loopback caller presented no valid setup token (D38), or the Origin/Sec-Fetch-Site check said cross-site.",
+            "x-error-codes": [
+              "csrf_failed",
+              "setup_token_required"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Another caller claimed this host first.",
+            "x-error-codes": [
+              "setup_already_claimed"
+            ]
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The request body carried no `Content-Type: application/json`, which is the shape a cross-origin request built to avoid a preflight has.",
+            "x-error-codes": [
+              "unsupported_media_type"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {},
+          {
+            "setupToken": []
+          }
+        ],
+        "summary": "Claim this host: create the admin account, burn the one-time token and log the browser in. Loopback callers need no `X-Setup-Token` (D38).",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/skip": {
+      "post": {
+        "operationId": "skipSetupStep",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupSkipRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The step is marked skipped."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No such wizard step.",
+            "x-error-codes": [
+              "wizard_step_unknown"
+            ]
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No valid admin session accompanied the request.",
+            "x-error-codes": [
+              "unauthorized"
+            ]
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The CSRF double-submit, Origin or Sec-Fetch-Site check failed.",
+            "x-error-codes": [
+              "csrf_failed"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The step is not skippable, or an earlier step is unfinished.",
+            "x-error-codes": [
+              "wizard_step_locked"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [
+          {
+            "csrfToken": [],
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Skip a wizard step that section 11.2 marks skippable.",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/state": {
+      "get": {
+        "operationId": "getSetupState",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStateDTO"
+                }
+              }
+            },
+            "description": "The wizard's state for this caller."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [],
+        "summary": "Claim state, whether this caller needs a setup token, and where the wizard stands.",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "The daemon is alive."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "An unhandled error. The message is a constant; the detail is in the journal.",
+            "x-error-codes": [
+              "internal_error"
+            ]
+          }
+        },
+        "security": [],
+        "summary": "Liveness only, no state.",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "auth"
+    },
+    {
+      "name": "events"
+    },
+    {
+      "name": "health"
+    },
+    {
+      "name": "instances"
+    },
+    {
+      "name": "meta"
+    },
+    {
+      "name": "setup"
+    }
+  ]
+}

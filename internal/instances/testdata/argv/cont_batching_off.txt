@@ -1,0 +1,9 @@
+/var/lib/llamaman/versions/b10621-cuda-src/bin/llama-server
+-m
+/home/svc/.cache/huggingface/hub/models--bartowski--Qwen3-8B-GGUF/snapshots/deadbeef/Qwen3-8B-Q4_K_M.gguf
+-nocb
+--host
+127.0.0.1
+--port
+21001
+--no-webui

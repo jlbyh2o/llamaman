@@ -1,0 +1,33 @@
+# llamaman-units: @UNITS_VERSION@
+# /etc/polkit-1/localauthority/50-local.d/49-llamaman.pkla   (polkit < 0.106)
+#
+# Written by `llamaman install-units` on legacy hosts. .pkla cannot express
+# per-action branching at all — it keys on action ids only — so this is three
+# stanzas, one per action id, and the manage-units stanza is necessarily BROADER
+# here than the .rules equivalent: all of manage-units, not just the llamaman
+# unit names. install-units prints that difference and records it in
+# runtime_info.polkit_detail.
+#
+# The service identity has no login session, so the grant has to hold for an
+# inactive, seatless subject: ResultAny is the line that matters.
+
+[llamaman: reload the service manager]
+Identity=unix-user:@IDENTITY@
+Action=org.freedesktop.systemd1.reload-daemon
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+
+[llamaman: manage units]
+Identity=unix-user:@IDENTITY@
+Action=org.freedesktop.systemd1.manage-units
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+
+[llamaman: manage unit files]
+Identity=unix-user:@IDENTITY@
+Action=org.freedesktop.systemd1.manage-unit-files
+ResultAny=@UNIT_FILES_PKLA@
+ResultInactive=@UNIT_FILES_PKLA@
+ResultActive=@UNIT_FILES_PKLA@

@@ -11,10 +11,12 @@ package packaging
 
 import "embed"
 
-// Templates is the embedded set of unit and polkit template files. The files
-// committed today are placeholders; the real content — and the render-step
-// logic that fills them in — lands with internal/systemd's Controller
-// implementations (DESIGN section 5.6).
+// Templates is the embedded set of unit and polkit template files, rooted at
+// "templates/". Every substitution in them is written `@LIKE_THIS@` and is
+// filled in by internal/systemd's renderer, which is also the only reader of
+// this FS: the render step is what DESIGN section 5.4a's drift check re-runs
+// against an installed file, so there is exactly one producer of unit content
+// in the whole design.
 //
 //go:embed templates
 var Templates embed.FS

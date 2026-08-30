@@ -1,0 +1,12 @@
+/v/b9000-cpu-bin/bin/llama-server
+-m
+/home/svc/.cache/huggingface/hub/models--bartowski--Qwen3-8B-GGUF/snapshots/deadbeef/Qwen3-8B-Q4_K_M.gguf
+-c
+8192
+-ngl
+999
+--host
+127.0.0.1
+--port
+21001
+--no-webui

@@ -1,7 +1,27 @@
-# Placeholder — DESIGN sections 5 and 13.
+# llamaman-units: @UNITS_VERSION@
+[Unit]
+Description=Llama Man self-update revert
+# Both conditions are plain (both must hold), and together they are the whole
+# arming logic. On a fresh install, and on every host where no update is in
+# flight, at least one is false and this unit is inert — which is why
+# OnFailure= on llamaman.service can point at it unconditionally (D88).
+ConditionPathExists=@PREFIX@/llamaman.prev
+ConditionPathExists=%S/llamaman/update/pending
+# Bounded retry: a judge whose rename keeps failing (a read-only /usr, say) must
+# not loop forever.
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+# The scope argument below is rendered by install-units — the one component that
+# knows the answer. This unit is installed in BOTH topologies, so unlike the
+# privileged swap unit it is a substitution rather than a literal. It is how the
+# judge knows whether systemctl needs --user.
 #
-# This is a placeholder for the llamaman-update-verify.service unit template
-# (DESIGN section 12.2), rendered by `llamaman install-units` (DESIGN section
-# 13 step 7). It exists only to give packaging.Templates
-# (packaging/packaging.go) a non-empty directory to embed; the real unit
-# content lands with internal/systemd's renderer.
+# The judge execs the PREVIOUS binary, never the installed one (D13): a judge
+# that is itself the suspect cannot be trusted to decide.
+ExecStart=@PREFIX@/llamaman.prev update-verify @SCOPE_ARG@
+TimeoutStartSec=60
+ExecStopPost=-@SYSTEMCTL@ reset-failed llamaman.service
+ExecStopPost=@SYSTEMCTL@ start --no-block llamaman.service

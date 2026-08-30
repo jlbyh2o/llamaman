@@ -1,7 +1,28 @@
-# Placeholder — DESIGN sections 5 and 13.
-#
-# This is a placeholder for the llamaman-selfupdate.service unit template
-# (DESIGN section 12.1), rendered by `llamaman install-units` (DESIGN section
-# 13 step 7). It exists only to give packaging.Templates
-# (packaging/packaging.go) a non-empty directory to embed; the real unit
-# content lands with internal/systemd's renderer.
+# llamaman-units: @UNITS_VERSION@
+[Unit]
+Description=Llama Man self-update (privileged swap)
+# One trigger, one branch. On a fresh install the file is absent, the unit
+# reports "condition failed", and that is a normal non-failing outcome. The
+# marker is written by the daemon and by nothing else.
+ConditionPathExists=%S/llamaman/update/pending
+
+[Service]
+Type=oneshot
+# The scope argument below is not decoration: this actor must refuse to run in
+# user scope at all, and it cannot learn the scope any other way (it never opens
+# the database). install-units writes this unit ONLY in system scope, so the
+# argument is a literal here rather than a substitution.
+ExecStart=@PREFIX@/llamaman selfupdate-apply --scope system
+# D91: this bound is what makes the "an actor is active" deferral a promise
+# systemd enforces rather than one the design asserts. The work below is a hash,
+# a copy, an untar and two renames.
+TimeoutStartSec=120
+# However this unit ends — cleanly, in failure, or with its main process
+# SIGKILLed mid-swap — the host must not be left without a daemon. reset-failed
+# first, because a unit that exhausted its start limit refuses a plain start.
+# Neither line runs when ConditionPathExists= skipped the unit. These two lines
+# are a BACKSTOP, not the ordinary exit: while the daemon is still alive and
+# waiting to be restarted, llamaman.service is `active` and `start` returns
+# EALREADY without queuing a job.
+ExecStopPost=-@SYSTEMCTL@ reset-failed llamaman.service
+ExecStopPost=@SYSTEMCTL@ start --no-block llamaman.service

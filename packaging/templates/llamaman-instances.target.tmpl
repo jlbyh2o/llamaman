@@ -1,7 +1,14 @@
-# Placeholder — DESIGN sections 5 and 13.
-#
-# This is a placeholder for the llamaman-instances.target unit template
-# (DESIGN section 5.5), rendered by `llamaman install-units` (DESIGN section
-# 13 step 7). It exists only to give packaging.Templates
-# (packaging/packaging.go) a non-empty directory to embed; the real unit
-# content lands with internal/systemd's renderer.
+# llamaman-units: @UNITS_VERSION@
+[Unit]
+Description=Llama Man instances
+Documentation=https://github.com/jlbyh2o/llamaman
+After=@AFTER@
+# Autostart is EnableUnitFiles linking an instance unit into this target, which
+# also gives one lever for "stop everything for maintenance". Because this target
+# starts enabled instances at boot WITHOUT the daemon being involved at all,
+# instances.autostart and instances.desired_state must agree at that moment —
+# which is what the D53 coupling guarantees.
+AllowIsolate=no
+
+[Install]
+WantedBy=@WANTED_BY@

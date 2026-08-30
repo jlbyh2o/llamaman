@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -63,14 +65,52 @@ func ExitCode(err error) (int, bool) {
 type Env struct {
 	Stdout io.Writer
 	Stderr io.Writer
+	// Stdin is where `reset-password --stdin` reads from. Nil uses os.Stdin.
+	Stdin io.Reader
 	// Interactive reports whether stdin is a terminal. It is a field rather
 	// than a call so a test can exercise both arms of the unit-only guard.
 	Interactive bool
+	// Getenv reads the environment. Nil uses os.Getenv. It is injectable
+	// because D72's chain — which is how `status`, `doctor` and
+	// `reset-password` find the database — is entirely environment-driven, and
+	// a test that had to mutate the real environment could not run in parallel.
+	Getenv func(string) string
+	// Now supplies the instants a command stamps or measures against. Nil uses
+	// time.Now.
+	Now func() time.Time
 }
 
 // DefaultEnv is the Env for a real process.
 func DefaultEnv() Env {
-	return Env{Stdout: os.Stdout, Stderr: os.Stderr, Interactive: stdinIsTerminal()}
+	return Env{
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+		Stdin:       os.Stdin,
+		Interactive: stdinIsTerminal(),
+		Getenv:      os.Getenv,
+		Now:         time.Now,
+	}
+}
+
+func (e Env) getenv() func(string) string {
+	if e.Getenv == nil {
+		return os.Getenv
+	}
+	return e.Getenv
+}
+
+func (e Env) now() time.Time {
+	if e.Now == nil {
+		return time.Now()
+	}
+	return e.Now()
+}
+
+func (e Env) stdin() io.Reader {
+	if e.Stdin == nil {
+		return os.Stdin
+	}
+	return e.Stdin
 }
 
 // stdinIsTerminal reports whether stdin is a real terminal.
@@ -93,22 +133,50 @@ func stub(env Env, name string) error {
 // unitOnly parses the shared flags of a unit-only entry point and enforces the
 // TTY refusal. The three commands that use it are started by systemd, never by
 // a human, and --force exists only so a developer can say they meant it.
-func unitOnly(env Env, name string, args []string) error {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(env.Stderr)
-	force := fs.Bool("force", false, "run even from an interactive terminal (this is a unit-only entry point)")
-	fs.Usage = func() {
-		fmt.Fprintf(env.Stderr, "Usage: llamaman %s [flags]\n\n", name)
-		fmt.Fprintf(env.Stderr, "This is a unit-only entry point: it is started by systemd and refuses\n")
-		fmt.Fprintf(env.Stderr, "to run from an interactive terminal without --force.\n\n")
-		fs.PrintDefaults()
+//
+// It returns the positional arguments left after the flags, because one of the
+// three takes one: `instance-exec %i` is handed the instance name by the
+// template unit, and that name is the launcher's entire world besides the
+// binary and the database (§5.6).
+func unitOnly(env Env, name string, args []string) ([]string, error) {
+	// `--force` is recognized WHEREVER it appears, and the positionals are
+	// whatever is left. Go's flag package stops parsing at the first non-flag
+	// argument, so `instance-exec qwen --force` would otherwise hand the
+	// launcher two "instance names" — and `<subcommand> <name> --force` is
+	// exactly what a human types when a unit-only entry point refuses them.
+	var (
+		force      bool
+		positional []string
+	)
+	for _, a := range args {
+		if a == "--force" || a == "-force" {
+			force = true
+			continue
+		}
+		positional = append(positional, a)
 	}
-	if err := fs.Parse(args); err != nil {
-		return err
+
+	if len(positional) > 0 && strings.HasPrefix(positional[0], "-") {
+		// An unknown flag is still an error, and the flag package is what
+		// reports it with the usage text.
+		fs := flag.NewFlagSet(name, flag.ContinueOnError)
+		fs.SetOutput(env.Stderr)
+		fs.Bool("force", false, "run even from an interactive terminal (this is a unit-only entry point)")
+		fs.Usage = func() {
+			fmt.Fprintf(env.Stderr, "Usage: llamaman %s [--force] [name]\n\n", name)
+			fmt.Fprintf(env.Stderr, "This is a unit-only entry point: it is started by systemd and refuses\n")
+			fmt.Fprintf(env.Stderr, "to run from an interactive terminal without --force.\n\n")
+			fs.PrintDefaults()
+		}
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		positional = fs.Args()
 	}
-	if env.Interactive && !*force {
+
+	if env.Interactive && !force {
 		fmt.Fprintf(env.Stderr, "llamaman %s: %v\n", name, ErrInteractive)
-		return ErrInteractive
+		return nil, ErrInteractive
 	}
-	return nil
+	return positional, nil
 }

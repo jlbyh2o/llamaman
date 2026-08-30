@@ -1,0 +1,71 @@
+# llamaman-units: 1
+[Unit]
+Description=Llama Man — llama.cpp management daemon
+Documentation=https://github.com/jlbyh2o/llamaman
+After=basic.target dbus.socket
+Wants=dbus.socket
+# D88, the self-update revert. When this unit finally enters the `failed` state —
+# which, under Restart=always, means the start limit below was exhausted —
+# systemd starts the judge, which is the retained previous binary. The judge's
+# own two ConditionPathExists= lines make it inert unless an update is genuinely
+# unconfirmed, so this line is safe to carry unconditionally, on every host.
+OnFailure=llamaman-update-verify.service
+# The three properties below ARE the revert deadline, and CI asserts both the
+# values and the arithmetic: 5 x (45 + 2) = 235 s to reach `failed`, and
+# 235 < 600 so the burst counter cannot reset between attempts and leave a
+# hanging daemon looping in `activating` forever.
+#
+# D93: systemd's start rate limit counts EVERY start attempt, not only the
+# failed ones, so the daemon clears it — after 60 s of continuous readiness it
+# calls ResetFailedUnit on this unit. The limit therefore counts consecutive
+# starts that never became healthy, which is what the revert deadline means.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=notify
+NotifyAccess=main
+WatchdogSec=30
+# A daemon that has not sent READY=1 in 45 s is killed and retried. Legitimately
+# slow starts extend this rather than trip it: the boot sequence sends
+# EXTEND_TIMEOUT_USEC= every 10 s while PRAGMA integrity_check or a migration is
+# running.
+TimeoutStartSec=45
+User=alice
+Group=alice
+ExecStart=/home/alice/.local/bin/llamaman serve --scope user
+Restart=always
+RestartSec=2
+# D58: keep the listening sockets alive across a restart. The default
+# FileDescriptorStorePreserve= is `restart`, which is exactly the scope wanted:
+# preserved across `systemctl restart`, dropped on a full stop. 256 covers the
+# management listener plus 255 instances.
+FileDescriptorStoreMax=256
+TimeoutStopSec=45
+StateDirectory=llamaman
+StateDirectoryMode=0750
+# %S is the state-directory ROOT the manager chose: /var/lib for a system unit,
+# $XDG_STATE_HOME (normally ~/.local/state) for a user unit. Writing it as a
+# specifier rather than a literal is what makes one template correct in both
+# scopes (D72).
+WorkingDirectory=%S/llamaman
+SyslogIdentifier=llamaman
+LimitNOFILE=65536
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+# ProtectHome=no is mandatory: the models live under a home directory.
+ProtectHome=no
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryAccounting=yes
+# The Hugging Face cache is deliberately NOT named here (D57): ProtectSystem=full
+# makes only /usr, /boot, /efi and /etc read-only and ProtectHome=no leaves home
+# directories alone, so every plausible cache root is already writable. Naming it
+# would bake a stale path into a unit the daemon cannot rewrite.
+ReadWritePaths=%S/llamaman
+
+[Install]
+WantedBy=default.target

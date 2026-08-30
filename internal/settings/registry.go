@@ -230,6 +230,10 @@ func validHTTPURL(v any) error {
 	return nil
 }
 
+// KeyHFHubDir is `settings['hf.hub_dir']`, the authoritative primary hub
+// directory of section 7.2a.
+const KeyHFHubDir = "hf.hub_dir"
+
 // definitions is every key DESIGN section 2.1 names, in the order that table
 // lists them. Each comment cites the table row it transcribes.
 var definitions = []Definition{
@@ -260,6 +264,12 @@ var definitions = []Definition{
 	{Key: "security.lockout_sec", Kind: KindInt, Default: int64(900), Min: intPtr(1)},
 
 	// --- hf.* ----------------------------------------------------------------
+	//
+	// KeyHFHubDir is spelled as a constant because a second reader of it exists
+	// outside this package and outside the daemon process: `instance-exec`
+	// builds section 5.7's `HF_HUB_CACHE`/`HF_HOME` from this exact row, with
+	// no settings cache and no HTTP. A literal in both places is two spellings
+	// of one authority.
 	{
 		Key: "hf.endpoint", Kind: KindString, Default: "https://huggingface.co",
 		Extra: validHTTPURL,
@@ -279,7 +289,7 @@ var definitions = []Definition{
 		// `hf_cache_roots`, this key, `hf.home` and `runtime_info` in
 		// agreement; a caller changing the primary cache root must go through
 		// it rather than through Cache.Set directly.
-		Key: "hf.hub_dir", Kind: KindString, Default: "",
+		Key: KeyHFHubDir, Kind: KindString, Default: "",
 	},
 	{
 		// Courtesy projection of hf.hub_dir (§7.2a): `hub_dir` minus a

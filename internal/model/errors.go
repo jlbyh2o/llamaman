@@ -39,6 +39,30 @@ const (
 	// (D96, §2.3a).
 	CodeSelfUpdateNotCancelable ErrorCode = "selfupdate_not_cancelable"
 
+	// CodeBadCredentials is the 401 POST /auth/login answers a wrong password
+	// with (§3.1). It is deliberately the same code for "no account exists" and
+	// "wrong password": telling the two apart would make the endpoint an oracle
+	// for whether a host has been claimed, which `GET /api/v1/meta` answers
+	// honestly to anyone who is entitled to ask.
+	CodeBadCredentials ErrorCode = "bad_credentials"
+	// CodeLockedOut is the 429 of §3.1, carrying `retry_after_sec` in details:
+	// this address has exhausted its login attempts and is blocked until then
+	// (SPEC §4). It is the ONE 429 in this API that is not §3.3's restart rate
+	// limit, and §3.1's own table names it.
+	CodeLockedOut ErrorCode = "locked_out"
+	// CodePasswordInvalid is the 400 for a password that fails the strength
+	// rule the wizard's meter shows (§11.2) — too short, or absurdly long.
+	CodePasswordInvalid ErrorCode = "password_invalid"
+
+	// CodeWizardStepUnknown is the 400 for a `step` that is not one of §11.2's
+	// seven.
+	CodeWizardStepUnknown ErrorCode = "wizard_step_unknown"
+	// CodeWizardStepLocked is the 409 for a wizard move the server refuses:
+	// skipping a step §11.2 marks non-skippable, or entering one whose
+	// prerequisites are unfinished. The gate is server-side because the wizard
+	// is resumable and a client's idea of where it is cannot be trusted.
+	CodeWizardStepLocked ErrorCode = "wizard_step_locked"
+
 	// CodePortUnavailable is §2.8's 422 for a port that breaks one of the six
 	// port rules; the reason travels in details as a PortReason.
 	CodePortUnavailable ErrorCode = "port_unavailable"
@@ -49,10 +73,78 @@ const (
 
 	// The launcher error codes recorded in `instance_starts.error_code` for a
 	// run that never reached execve (§2.8, §5.6).
+	//
+	// CodeModelMissing and CodeBadFlags are also the save-time answers of §3.10:
+	// a `model_id` naming no row, and a `flags_json` whose value fails
+	// FlagSet.Validate, are the same two conditions the launcher exits 72 and
+	// 65 for, caught one step earlier. One name per condition beats two.
 	CodeModelMissing ErrorCode = "model_missing"
 	CodePortConflict ErrorCode = "port_conflict"
 	CodeBadFlags     ErrorCode = "bad_flags"
+
+	// CodeConflictGeneration is §3's optimistic-concurrency 409: a PATCH on an
+	// instance or a preset whose `generation` is not the current one. None of
+	// the seven exceptional writers of §2.8 bumps that column, so this code
+	// always means a human edited the configuration under this form.
+	CodeConflictGeneration ErrorCode = "conflict_generation"
+	// CodeDraftVocabMismatch is D34's 422: both models are parsed and their
+	// `tokenizer_model`/`n_vocab` differ, so speculative decoding would emit
+	// garbage. Both values travel in details (§3.10a).
+	CodeDraftVocabMismatch ErrorCode = "draft_vocab_mismatch"
+	// CodeNGLAutoConflict is §5.7's 422 for `n_gpu_layers.mode = "auto"` saved
+	// together with an explicit `tensor_split`: upstream disables `--fit` when
+	// either -ngl or --tensor-split is pinned, so `auto` would mean nothing.
+	CodeNGLAutoConflict ErrorCode = "ngl_auto_conflict"
+	// CodeExtraFlagForbidden is §5.7's 422 for an `extra_flags` string that
+	// overrides something the renderer owns — `--host`, `--port`, `-m`,
+	// `--model` or `--api-key`. The escape hatch may add flags; it may not
+	// contradict the ones that make the instance reachable.
+	CodeExtraFlagForbidden ErrorCode = "extra_flag_forbidden"
+	// CodeInstanceNameInvalid is the 422 for a name that fails D11's grammar
+	// `^[a-z0-9][a-z0-9-]{0,31}$`. The same string becomes a systemd unit
+	// instance id and is matched by the polkit regex, which is why the rule is
+	// enforced in three places and why a violation is an input error rather
+	// than something to normalize.
+	CodeInstanceNameInvalid ErrorCode = "instance_name_invalid"
+	// CodeInstanceNameTaken is the 409 for a name another NON-DELETED instance
+	// holds. Soft deletion scopes the unique index to live rows (D68), so a
+	// deleted instance's name is free and this code never fires for one.
+	CodeInstanceNameTaken ErrorCode = "instance_name_taken"
 )
+
+// WarningCode is the machine-readable code of an entry in a response's
+// `warnings` array. Warnings are not errors: the request succeeded and the row
+// was written, and the client is being told something it should show rather
+// than something it must fix. §3.10a's deferred draft validation is the
+// original: a save that succeeds with `201` while carrying the note that a
+// check is owed.
+type WarningCode string
+
+const (
+	// WarnDraftVocabUnverified is §3.10a's third row: one side of the draft
+	// pairing has no GGUF metadata yet, so the check is deferred rather than
+	// performed or refused.
+	WarnDraftVocabUnverified WarningCode = "draft_vocab_unverified"
+	// WarnUnknownFlags is §5.7's flag-churn guard: the rendered argv contains a
+	// flag the active build's `--help` does not advertise. It is a WARNING by
+	// design — llama.cpp ships ~10 nightlies a day and a hard failure would
+	// make the tool brittle by design.
+	WarnUnknownFlags WarningCode = "unknown_flags"
+	// WarnFlagCheckUnavailable is what the guard says on a build with no help
+	// capture (`help_flags_json IS NULL`): the check could not run, which is
+	// not the same as "every flag is unknown".
+	WarnFlagCheckUnavailable WarningCode = "flag_check_unavailable"
+	// WarnNGLAutoWithoutFit is §5.7's second `-ngl auto` rule: this build
+	// predates `--fit`, so `auto` renders as `-ngl 999` and behaves as `all`.
+	WarnNGLAutoWithoutFit WarningCode = "ngl_auto_without_fit"
+)
+
+// Warning is one entry of a response's `warnings` array.
+type Warning struct {
+	Code    WarningCode    `json:"code"`
+	Message string         `json:"message"`
+	Details map[string]any `json:"details,omitempty"`
+}
 
 // PortReason is the `reason` carried in the details of a CodePortUnavailable
 // response — the six port rules of §2.8, which are validated at save time rather
