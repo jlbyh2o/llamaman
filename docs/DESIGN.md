@@ -5758,7 +5758,7 @@ $ sudo systemctl stop llamaman.service
 
 # 2. Put the older binary back on disk, with the service still down. `--no-start` is what keeps
 #    step 11 of install.sh from restarting into a database this binary cannot open yet.
-$ curl -fsSL https://raw.githubusercontent.com/jlbyh2o/llamaman/main/install.sh \
+$ curl -fsSL https://raw.githubusercontent.com/jlbyh2o/llamaman/main/installer/install.sh \
     | sudo sh -s -- --version v1.1.0 --no-start
 
 # 3. Restore the database the older schema belongs to. Now the precondition means something: the
@@ -5816,7 +5816,7 @@ commands, and `restore-db` alone is not one of them.
 ## 13. `install.sh` design
 
 One file, POSIX `sh` (`#!/bin/sh`, `set -eu`), no bashisms, shellcheck-clean, served from
-`raw.githubusercontent.com/jlbyh2o/llamaman/main/install.sh`.
+`raw.githubusercontent.com/jlbyh2o/llamaman/main/installer/install.sh`.
 
 **The entire script is wrapped in a `main "$@"` function invoked on the last line (D48)**, so a
 truncated `curl … | sh` download cannot execute half a script — the classic curl-to-shell hazard.

@@ -339,7 +339,7 @@ func (s *Service) guard(ctx context.Context, tx store.Tx) error {
 				"update with the install.sh one-liner instead",
 			Details: map[string]any{
 				"command": "curl -fsSL https://raw.githubusercontent.com/" + Repo +
-					"/main/install.sh | sudo sh",
+					"/main/installer/install.sh | sudo sh",
 			},
 		}
 	}
@@ -421,7 +421,7 @@ func (s *Service) unit(name string) (UnitFile, error) {
 func DowngradeProcedure(l Layout, tag, snapshot string) []string {
 	return []string{
 		"sudo systemctl stop " + DaemonUnit,
-		"curl -fsSL https://raw.githubusercontent.com/" + Repo + "/main/install.sh | " +
+		"curl -fsSL https://raw.githubusercontent.com/" + Repo + "/main/installer/install.sh | " +
 			"sudo sh -s -- --version " + tag + " --no-start",
 		"sudo llamaman restore-db " + snapshot,
 		"sudo systemctl reset-failed " + DaemonUnit,

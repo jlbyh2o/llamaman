@@ -96,7 +96,7 @@ Status: agreed via interview on 2026-08-28. Decisions below are settled; items u
 6. Create first instance from a downloaded model, sane defaults prefilled; optionally enable autostart.
 
 ### 3.7 Installer (one-liner)
-- `curl -fsSL https://raw.githubusercontent.com/jlbyh2o/llamaman/main/install.sh | sh` → verifies systemd + arch, downloads the llamaman release binary from GitHub Releases, installs `/etc/systemd/system/llamaman.service` + instance template unit (service identity per §5.1b), creates `/var/lib/llamaman/`, enables + starts the service, prints the wizard URL.
+- `curl -fsSL https://raw.githubusercontent.com/jlbyh2o/llamaman/main/installer/install.sh | sh` → verifies systemd + arch, downloads the llamaman release binary from GitHub Releases, installs `/etc/systemd/system/llamaman.service` + instance template unit (service identity per §5.1b), creates `/var/lib/llamaman/`, enables + starts the service, prints the wizard URL.
 - Idempotent (re-running = upgrade path); `--uninstall` supported. No package-manager calls.
 
 ### 3.8 Self-update

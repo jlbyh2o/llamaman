@@ -372,7 +372,7 @@ jobs:
             section 'Performance' '^perf(\([^)]*\))?!?:'
             section 'Documentation' '^docs(\([^)]*\))?!?:'
             printf '### Install\n\n'
-            printf '```sh\ncurl -fsSL https://raw.githubusercontent.com/jlbyh2o/llamaman/main/install.sh | sudo sh\n```\n\n'
+            printf '```sh\ncurl -fsSL https://raw.githubusercontent.com/jlbyh2o/llamaman/main/installer/install.sh | sudo sh\n```\n\n'
             printf 'Every artifact below is covered by `checksums.txt`, which is signed with the\n'
             printf 'ed25519 release key compiled into the binary. To check a download yourself:\n\n'
             printf '```sh\nllamaman verify-release <directory>\n```\n'
