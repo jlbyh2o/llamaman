@@ -439,6 +439,21 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 		return nil, err
 	}
 
+	// --- step 6, cache-root half. It runs HERE rather than beside the systemd
+	// and GPU probes because it is the only part of the probe that needs a
+	// service: the chain's winner is persisted through the models service, and
+	// each root it registers enqueues the scan that makes already-downloaded
+	// GGUFs visible (SPEC §3.2), which needs buildCatalog's scan worker in the
+	// registry. It is a no-op once a primary root exists, so a later boot never
+	// re-litigates a cache the user moved in the UI.
+	//
+	// A failure here is NOT a refusal to start, for step 6a's reason: the
+	// resolved path is a first-boot hint, never a requirement, and the wizard's
+	// cache step asks for one when the chain named nothing.
+	if err := d.detectCacheRoots(ctx); err != nil {
+		log.Warn("could not detect the Hugging Face cache root; the wizard will ask", "error", err)
+	}
+
 	if err := d.buildBench(); err != nil {
 		d.close()
 		return nil, err

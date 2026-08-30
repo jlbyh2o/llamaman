@@ -131,3 +131,43 @@ var (
 	_ models.SettingsCache = (*settings.Cache)(nil)
 	_ download.Settings    = (*settings.Cache)(nil)
 )
+
+// detectCacheRoots runs §7.2's six-rule chain once and registers what it found.
+//
+// The chain and its persistence were both implemented and neither was ever
+// invoked, so `hf_cache_roots` stayed empty on every fresh host: the wizard's
+// Hugging Face step reported "no cache root is registered", and SPEC §3.2's
+// promise that models already on disk are surfaced as ready to use was never
+// kept. The scan each registered root enqueues is what keeps it.
+//
+// Errors are returned for the caller to log, never to refuse a boot. A daemon
+// with no cache root is fully usable — the wizard asks for one — and an
+// environment variable is a first-boot hint rather than a requirement.
+func (d *daemon) detectCacheRoots(ctx context.Context) error {
+	if d.models == nil {
+		return fmt.Errorf("cache-root detection needs the model service")
+	}
+
+	found, err := d.models.DetectRoots(ctx)
+	if err != nil {
+		return err
+	}
+	switch {
+	case found.AlreadyResolved:
+		// A later boot. The chain is deliberately not re-run: see DetectRoots.
+	case found.Primary.Path == "":
+		d.log.Info("no Hugging Face cache directory was named by the environment; " +
+			"the wizard's cache step will ask")
+	default:
+		d.log.Info("detected the Hugging Face cache",
+			"hub_dir", found.Primary.Path,
+			"detected_from", string(found.Chain.Primary.From),
+			"scan_job", found.PrimaryScan.JobID,
+			"other_roots", len(found.Others))
+	}
+	for _, skip := range found.Skipped {
+		d.log.Warn("a detected cache directory could not be registered",
+			"path", skip.Path, "error", skip.Reason)
+	}
+	return nil
+}
