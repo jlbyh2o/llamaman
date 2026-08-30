@@ -326,10 +326,27 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # From the upstream release rather than apt, because ubuntu-24.04 pins
+      # shellcheck 0.9.0 — the release that introduced SC2317 ("command appears
+      # to be unreachable") without teaching it that `trap` invokes a function.
+      # Both scripts install their cleanup and failure handlers through `trap`,
+      # so 0.9.0 reports every line of every handler: 643 findings, all false,
+      # and no way to see a real one behind them. 0.11.0 fixed the check and
+      # reports both scripts clean. Upstream publishes no checksum file, so the
+      # digest below is pinned here and verified before the binary is trusted.
       - name: Install shellcheck
+        env:
+          SHELLCHECK_VERSION: v0.11.0
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends shellcheck
+          set -euo pipefail
+          tarball="shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          curl -fsSL --retry 3 -o "$tarball" \
+            "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${tarball}"
+          echo "${SHELLCHECK_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xJf "$tarball"
+          sudo install -m 0755 "shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          rm -rf "$tarball" "shellcheck-${SHELLCHECK_VERSION}"
           shellcheck --version
 
       # --shell=sh is not redundant with the shebang: it is the assertion. It
