@@ -1,0 +1,11 @@
+# Llama Man release signing key — NEXT (DESIGN section 12.1 step 3).
+#
+# The binary embeds a current key AND a "next" key so a rotation needs no flag
+# day: a release signed with either verifies, so the new key can ship in a
+# release that is still signed with the old one, and the old key is retired a
+# release later once every host that will ever update has the new one compiled
+# in.
+#
+# Like the current key, this placeholder was generated with its private half
+# discarded. See release-current.pub.
+ceUGqgBjUCgpPijhXgxtBpQOUN46y4VtYfwt3QZMPZk=

@@ -14,21 +14,23 @@ import (
 // The refusal is asserted for all three; what each does once it is PAST the
 // refusal differs, so that half is a separate expectation per command.
 // instance-exec is the one that takes an argument — the template unit hands it
-// `%i` — so with none it reports the exit status the missing instance maps to
-// rather than the "not implemented" of a stub.
+// `%i` — so with none it reports the exit status the missing instance maps to.
+// The two self-update actors take `--scope`, and with none they refuse with
+// section 12.2's own refusal rather than doing anything: "a missing or
+// unparsable --scope is a refusal, not a guess".
 func TestUnitOnlyRefusesInteractive(t *testing.T) {
 	cases := []struct {
 		name        string
 		interactive bool
 		args        []string
-		// wantStub is what the two stubbed commands answer; wantExec is what
+		// wantActor is what the two privileged actors answer; wantExec is what
 		// instance-exec answers, which is never the same error.
-		wantStub error
-		wantExec error
+		wantActor error
+		wantExec  error
 	}{
-		{"unit start", false, nil, ErrNotImplemented, nil},
+		{"unit start", false, nil, ErrScopeRequired, nil},
 		{"terminal", true, nil, ErrInteractive, ErrInteractive},
-		{"terminal with force", true, []string{"--force"}, ErrNotImplemented, nil},
+		{"terminal with force", true, []string{"--force"}, ErrScopeRequired, nil},
 	}
 
 	for _, tc := range cases {
@@ -37,8 +39,8 @@ func TestUnitOnlyRefusesInteractive(t *testing.T) {
 			env := Env{Stdout: &out, Stderr: &errOut, Interactive: tc.interactive}
 
 			for _, cmd := range []func(Env, []string) error{SelfupdateApply, UpdateVerify} {
-				if err := cmd(env, tc.args); !errors.Is(err, tc.wantStub) {
-					t.Errorf("got %v, want %v", err, tc.wantStub)
+				if err := cmd(env, tc.args); !errors.Is(err, tc.wantActor) {
+					t.Errorf("got %v, want %v", err, tc.wantActor)
 				}
 			}
 

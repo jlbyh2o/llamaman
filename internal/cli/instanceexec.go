@@ -79,7 +79,14 @@ type instanceExecOptions struct {
 // InstanceExec is the launcher named by every instance unit's ExecStart.
 // Unit-only (DESIGN sections 1 and 5.6).
 func InstanceExec(env Env, args []string) error {
-	rest, err := unitOnly(env, "instance-exec", args)
+	args, err := unitOnly(env, "instance-exec", args)
+	if err != nil {
+		return err
+	}
+	// This launcher takes no flags of its own — the template unit hands it `%i`
+	// and nothing else — so anything left that looks like a flag is an error
+	// with usage rather than an instance name.
+	rest, err := unitOnlyPositional(env, "instance-exec", "[--force] <name>", args)
 	if err != nil {
 		return err
 	}

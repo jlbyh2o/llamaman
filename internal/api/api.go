@@ -115,6 +115,26 @@ type Config struct {
 	// do: it is a documented endpoint, and a build gap is reported, never faked.
 	Gateway GatewayService
 
+	// Update serves the four self-update endpoints of section 3.14 — the status,
+	// the check, the release listing and the apply with its four guard clauses.
+	// *selfupdate.Service satisfies it. Nil answers those routes 503 rather than
+	// removing them: they are documented endpoints, and a build gap is reported,
+	// never faked.
+	Update UpdateService
+
+	// Jobs serves the three job rows of section 3.14 — the listing, the detail
+	// and the cancel. *jobs.Queue satisfies it. Nil answers those routes 503
+	// rather than removing them, for the same reason the fields around it do.
+	//
+	// The cancel is not plumbing: it is the only surface D96's cut-off has, and
+	// it is where a `self_update` past its `staged` commit is refused
+	// `409 selfupdate_not_cancelable` (section 12.1 step 5).
+	Jobs JobService
+
+	// EventLog serves `GET /api/v1/events/log` (section 3.14), the durable read
+	// of the same `events` table the SSE stream replays from. Nil answers 503.
+	EventLog EventLogService
+
 	// Hardware answers the fit endpoints' host half (section 8.6): the GPU
 	// inventory and system RAM. internal/hw's NvidiaSMIProber satisfies it.
 	//
@@ -250,6 +270,12 @@ func (a *API) register() error {
 		add(rt)
 	}
 	for _, rt := range a.apiTokenRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.jobRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.updateRoutes() {
 		add(rt)
 	}
 	if a.cfg.Events != nil {

@@ -28,6 +28,7 @@ import (
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/netutil"
 	"github.com/jlbyh2o/llamaman/internal/secrets"
+	"github.com/jlbyh2o/llamaman/internal/selfupdate"
 	"github.com/jlbyh2o/llamaman/internal/settings"
 	"github.com/jlbyh2o/llamaman/internal/setup"
 	"github.com/jlbyh2o/llamaman/internal/sse"
@@ -65,6 +66,20 @@ type daemon struct {
 	gateway     *gateway.Gateway
 	releases    *github.Client
 
+	// updateGate is section 12.3's ResolveUpdateMarkers, built at step 4 —
+	// BEFORE the migrations, because D92's disarm runs from the migration
+	// runner's BeforeFirst hook and the gate that unlinked the marker is the one
+	// that must resolve the in-memory copy of it at step 11.
+	updateGate *selfupdate.Gate
+	// selfupdate is the daemon's half of section 12: the apply endpoint's guard
+	// and the pipeline behind it.
+	selfupdate *selfupdate.Service
+	// swap is section 12.1 step 7's signal from the worker to the serve loop. It
+	// is buffered by one and the send is non-blocking, so it is the whole state
+	// machine: a second BeginSwap on a daemon that is already swapping is a
+	// no-op rather than a second drain.
+	swap chan struct{}
+
 	// gpus is step 6's GPU probe, shared by the supervisor's D17 attribution,
 	// the bench exclusivity guard and the fit calculator's host inputs. See
 	// hardware.go for why there is exactly one.
@@ -99,7 +114,7 @@ type daemon struct {
 //	step 12 workers and ResetFailed    the subsystems that own each worker
 func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 	log := opts.Logger
-	d := &daemon{opts: opts, log: log}
+	d := &daemon{opts: opts, log: log, swap: make(chan struct{}, 1)}
 
 	// --- step 1: scope, then state directory. The order matters: the
 	// state-directory fallback chain branches on the scope.
@@ -164,6 +179,21 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 	}
 
 	// --- step 4: the schema gate, the D92 disarm, then the migrations.
+	//
+	// The gate is constructed FIRST, and it is the one subsystem that has to be:
+	// BeforeFirst below is the D92 disarm, and there is no ordering in which a
+	// migration may run before the thing that unlinks `update/pending` exists.
+	// It needs nothing but the store and the state directory, both of which are
+	// resolved by now; everything else about self-update is built with the rest
+	// of the services further down.
+	d.updateGate = selfupdate.NewGate(selfupdate.GateConfig{
+		Store:   st,
+		Layout:  d.updateLayout(),
+		Version: buildinfo.Version,
+		Now:     opts.Now,
+		Log:     log,
+	})
+
 	applied, err := st.Migrate(ctx, store.MigrateOptions{
 		Now:         opts.Now,
 		Heartbeat:   heartbeat,
@@ -399,6 +429,15 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 		return nil, err
 	}
 
+	// Section 12's daemon half. It is registered HERE, with the other workers,
+	// for the reason §2.3's boot triage gives: an `interrupted` self_update must
+	// find its DomainWriter already in place, so that the row and the job move
+	// in one transaction. The gate itself was built at step 4.
+	if err := d.buildSelfUpdate(); err != nil {
+		d.close()
+		return nil, err
+	}
+
 	apiHandler, err := d.buildAPI()
 	if err != nil {
 		d.close()
@@ -418,27 +457,6 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 	}
 
 	return d, nil
-}
-
-// disarmRevert is D92's hook, called by the migration runner after the schema
-// gate and the checksum verification have passed and BEFORE the first migration
-// is applied — but only when there is at least one migration to apply.
-//
-// Applying a migration is the exact instant <prefix>/llamaman.prev stops being
-// a binary that could open this database, so it is the exact instant the
-// judge's second ConditionPathExists= must stop holding. The real
-// implementation reads `update/pending` into memory and unlinks it now, so that
-// step 11's gate resolves the in-memory copy exactly as if it had read the
-// file.
-//
-// internal/selfupdate owns `update/pending`; until it does, this hook says what
-// it would have done. It is wired now rather than later because wiring it later
-// is a change to the migration call site, and the whole point of D92 is that
-// the disarm cannot be forgotten.
-func (d *daemon) disarmRevert(pending []store.Migration) error {
-	d.log.Info("about to migrate; the self-update revert would be disarmed here (D92)",
-		"pending", len(pending), "marker", filepath.Join(d.stateDir, "update", "pending"))
-	return nil
 }
 
 // seedPortFromFlag is step 6b's three-way branch.
@@ -753,6 +771,18 @@ func (d *daemon) buildAPI() (http.Handler, error) {
 		},
 		APITokens: d.tokens,
 		Gateway:   d.gateway,
+		// Section 3.14's four self-update rows. The service is what evaluates the
+		// guard's four clauses inside the one transaction that stages an update
+		// (D97); this layer only carries the request to it and renders the 409s.
+		Update: d.selfupdate,
+		// Section 3.14's job rows. The queue is what enforces the two cancel
+		// cut-offs, through the CancelGuard each owning worker registers — which
+		// is the only way `POST /jobs/{id}/cancel` can reach D96's refusal for a
+		// `self_update` past its `staged` commit.
+		Jobs: d.queue,
+		// Section 3.14's `GET /events/log`: the durable read of the same table
+		// the SSE stream above replays from.
+		EventLog: eventLog{st: d.store},
 		// Section 8.6's host half. A nil Hardware is a CPU-only estimate rather
 		// than a 503, which is a real answer on a host with no NVIDIA card —
 		// but this host has a prober either way, and one that found no card

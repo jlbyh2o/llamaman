@@ -208,7 +208,19 @@ func statusForCode(c model.ErrorCode) int {
 		return http.StatusConflict
 	case model.CodeJobInFlight,
 		model.CodeDownloadExists,
-		model.CodeSelfUpdateNotCancelable:
+		model.CodeSelfUpdateNotCancelable,
+		CodeJobNotCancelable:
+		return http.StatusConflict
+	case CodeQueryInvalid:
+		// A query parameter outside its enum. The request parsed and what it
+		// named is the problem, which is what 422 means throughout this API.
+		return http.StatusUnprocessableEntity
+	case CodeSelfUpdateUnavailable, CodeSelfUpdateUnsupported, CodeRevertUnavailable:
+		// Three of section 12.1 step 1's four guard clauses. All three describe a
+		// request that is well formed and currently impossible — this host has no
+		// service manager, the swap actor is not installed, there is no working
+		// revert — and each carries the one command that makes it possible, which
+		// is what 409 means throughout this API.
 		return http.StatusConflict
 	case model.CodeModelInUse, model.CodeRootIsPrimary:
 		// Section 3.7's two refusals to change state. Both describe a request

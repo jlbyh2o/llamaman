@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -130,53 +129,70 @@ func stub(env Env, name string) error {
 	return ErrNotImplemented
 }
 
-// unitOnly parses the shared flags of a unit-only entry point and enforces the
-// TTY refusal. The three commands that use it are started by systemd, never by
-// a human, and --force exists only so a developer can say they meant it.
+// unitOnly strips the one flag every unit-only entry point shares and enforces
+// the TTY refusal. The three commands that use it are started by systemd, never
+// by a human, and --force exists only so a developer can say they meant it.
 //
-// It returns the positional arguments left after the flags, because one of the
-// three takes one: `instance-exec %i` is handed the instance name by the
-// template unit, and that name is the launcher's entire world besides the
-// binary and the database (§5.6).
+// It returns everything else VERBATIM — flags included — because each of the
+// three owns its own argument surface and this function must not stand between
+// a rendered `ExecStart=` and the FlagSet that understands it. That is not a
+// stylistic preference: the units render
+//
+//	ExecStart=<prefix>/llamaman selfupdate-apply --scope system
+//	ExecStart=<prefix>/llamaman.prev update-verify --scope <scope>
+//
+// (§12.2), and an earlier version of this function re-parsed the whole argument
+// list through a FlagSet that defined only `force` the moment the first
+// remaining argument began with `-`. Both actors therefore died with "flag
+// provided but not defined: -scope" before their own parser ever ran, which
+// killed the swap and D88's automatic revert on every host at once.
+//
+// `--force` is recognized WHEREVER it appears, because Go's flag package stops
+// parsing at the first non-flag argument: `instance-exec qwen --force` would
+// otherwise hand the launcher two "instance names", and `<subcommand> <name>
+// --force` is exactly what a human types when a unit-only entry point refuses
+// them.
 func unitOnly(env Env, name string, args []string) ([]string, error) {
-	// `--force` is recognized WHEREVER it appears, and the positionals are
-	// whatever is left. Go's flag package stops parsing at the first non-flag
-	// argument, so `instance-exec qwen --force` would otherwise hand the
-	// launcher two "instance names" — and `<subcommand> <name> --force` is
-	// exactly what a human types when a unit-only entry point refuses them.
 	var (
-		force      bool
-		positional []string
+		force bool
+		rest  []string
 	)
 	for _, a := range args {
 		if a == "--force" || a == "-force" {
 			force = true
 			continue
 		}
-		positional = append(positional, a)
-	}
-
-	if len(positional) > 0 && strings.HasPrefix(positional[0], "-") {
-		// An unknown flag is still an error, and the flag package is what
-		// reports it with the usage text.
-		fs := flag.NewFlagSet(name, flag.ContinueOnError)
-		fs.SetOutput(env.Stderr)
-		fs.Bool("force", false, "run even from an interactive terminal (this is a unit-only entry point)")
-		fs.Usage = func() {
-			fmt.Fprintf(env.Stderr, "Usage: llamaman %s [--force] [name]\n\n", name)
-			fmt.Fprintf(env.Stderr, "This is a unit-only entry point: it is started by systemd and refuses\n")
-			fmt.Fprintf(env.Stderr, "to run from an interactive terminal without --force.\n\n")
-			fs.PrintDefaults()
-		}
-		if err := fs.Parse(args); err != nil {
-			return nil, err
-		}
-		positional = fs.Args()
+		rest = append(rest, a)
 	}
 
 	if env.Interactive && !force {
 		fmt.Fprintf(env.Stderr, "llamaman %s: %v\n", name, ErrInteractive)
 		return nil, ErrInteractive
 	}
-	return positional, nil
+	return rest, nil
+}
+
+// unitOnlyUsage is the help text all three entry points share, printed by
+// whichever FlagSet reports a bad argument. It names `--force` even though
+// unitOnly consumed it before any FlagSet could see it, because a human who
+// reaches this text is exactly the reader that flag exists for.
+func unitOnlyUsage(env Env, name, argSummary string) func() {
+	return func() {
+		fmt.Fprintf(env.Stderr, "Usage: llamaman %s %s\n\n", name, argSummary)
+		fmt.Fprintf(env.Stderr, "This is a unit-only entry point: it is started by systemd and refuses\n")
+		fmt.Fprintf(env.Stderr, "to run from an interactive terminal without --force.\n")
+	}
+}
+
+// unitOnlyPositional parses the arguments of a unit-only entry point that takes
+// NO flags of its own, so an unknown one is still reported with usage rather
+// than mistaken for a positional. `instance-exec %i` is the only such command.
+func unitOnlyPositional(env Env, name, argSummary string, args []string) ([]string, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(env.Stderr)
+	fs.Usage = unitOnlyUsage(env, name, argSummary)
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	return fs.Args(), nil
 }

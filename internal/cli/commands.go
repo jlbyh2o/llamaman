@@ -105,37 +105,28 @@ func Serve(env Env, args []string) error {
 // Diagnostics writes a redacted support bundle to --out (D50).
 func Diagnostics(env Env, args []string) error { return stub(env, "diagnostics") }
 
-// RestoreDB is the explicit, offline database restore of DESIGN section 12.4:
-// step 3 of a five-command procedure, never run by itself, refusing while the
-// lock is held and refusing a snapshot from outside db-backups/ (D90).
-func RestoreDB(env Env, args []string) error { return stub(env, "restore-db") }
+// RestoreDB lives in restoredb.go: the explicit, offline database restore of
+// DESIGN section 12.4 — step 3 of a five-command procedure, never run by itself,
+// refusing while the lock is held and refusing a snapshot from outside
+// db-backups/ (D90, D94).
 
 // InstallUnits lives in installunits.go: it renders and installs the systemd
 // unit and polkit files, adds the identity to the systemd-journal group and
 // reloads the manager (DESIGN sections 5, 11.3 and 13 step 7).
 
-// VerifyRelease verifies a downloaded release against the embedded ed25519
-// public key and its sha256 checksums file (DESIGN section 12).
-func VerifyRelease(env Env, args []string) error { return stub(env, "verify-release") }
+// VerifyRelease lives in verifyrelease.go: it verifies a downloaded release
+// against the ed25519 public keys compiled into this binary and the sha256
+// digests in its signed checksums file (DESIGN sections 11.3, 12.1 and 13
+// step 3).
 
 // InstanceExec lives in instanceexec.go: it is the launcher named by every
 // instance unit's ExecStart, and it opens the database, renders the argv for
 // its instance and execs llama-server (DESIGN section 5.6). Unit-only.
 
-// SelfupdateApply is the root oneshot of DESIGN section 12.1: it performs the
-// staged binary swap and restarts the daemon. Unit-only.
-func SelfupdateApply(env Env, args []string) error {
-	if _, err := unitOnly(env, "selfupdate-apply", args); err != nil {
-		return err
-	}
-	return stub(env, "selfupdate-apply")
-}
+// SelfupdateApply lives in selfupdateapply.go: the root oneshot of DESIGN
+// section 12.2, which performs the staged binary swap and restarts the daemon.
+// Unit-only.
 
-// UpdateVerify is the judge of DESIGN section 12.2, started by the OnFailure=
-// on llamaman.service: it reverts an unconfirmed update. Unit-only.
-func UpdateVerify(env Env, args []string) error {
-	if _, err := unitOnly(env, "update-verify", args); err != nil {
-		return err
-	}
-	return stub(env, "update-verify")
-}
+// UpdateVerify lives in updateverify.go: the judge of DESIGN section 12.2,
+// started by the OnFailure= on llamaman.service and executed from the RETAINED
+// PREVIOUS binary, which reverts an unconfirmed update. Unit-only.

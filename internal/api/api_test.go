@@ -199,6 +199,27 @@ func TestRoutingTable(t *testing.T) {
 		"GET /api/v1/tokens/{id}/usage": {AuthSession, "getAPITokenUsage"},
 		"GET /api/v1/gateway/denials":   {AuthSession, "listGatewayDenials"},
 
+		// Section 3.14's self-update half: the status, the check, the release
+		// listing and the apply. The apply is idempotent (D65) — a double-clicked
+		// Update replays into `200` rather than staging a second one — and it is
+		// the row that carries the four guard clauses of section 12.1 step 1,
+		// every one of them a 409.
+		"GET /api/v1/update/status":   {AuthSession, "getUpdateStatus"},
+		"POST /api/v1/update/check":   {AuthSession, "checkUpdates"},
+		"GET /api/v1/update/releases": {AuthSession, "listUpdateReleases"},
+		"POST /api/v1/update/apply":   {AuthSession, "applyUpdate"},
+
+		// Section 3.14's job and event-log half. The cancel is the row that
+		// carries protocol: it is the ONLY surface D96's cut-off has, and it is
+		// where a `self_update` at or after the `staged` commit is refused
+		// `409 selfupdate_not_cancelable` (section 12.1 step 5). Without it the
+		// refusal and the accepted cancel were both implemented and both
+		// unreachable.
+		"GET /api/v1/jobs":              {AuthSession, "listJobs"},
+		"GET /api/v1/jobs/{id}":         {AuthSession, "getJob"},
+		"POST /api/v1/jobs/{id}/cancel": {AuthSession, "cancelJob"},
+		"GET /api/v1/events/log":        {AuthSession, "listEvents"},
+
 		// Section 3.9, complete: the fit calculator. Both are POSTs because the
 		// body is a FlagSet, and neither creates anything — a `GET` with a
 		// forty-field query string was the alternative.

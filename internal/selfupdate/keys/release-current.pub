@@ -1,0 +1,13 @@
+# Llama Man release signing key — CURRENT (DESIGN section 12.1 step 3, section 16.2 step 3).
+#
+# One base64 line below: the 32 raw bytes of an ed25519 public key. It is the
+# trust root for self-update, and it is compiled into the binary rather than
+# fetched, because verification has to work offline with no external tooling.
+#
+# This placeholder was generated with its private half discarded, so nothing can
+# produce a signature that verifies against it. That is deliberate and it fails
+# CLOSED: until release.yml's signing key is published here, `POST /update/apply`
+# refuses every tarball at the signature step instead of installing an unsigned
+# one. Replacing this file is a release-engineering act, and the release job that
+# signs `checksums.txt` is the only thing that may decide what goes in it.
+1awOluFYFDMWwKidjiUCFXxJJXYolndhWc1BvEMIjc0=

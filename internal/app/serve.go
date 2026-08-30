@@ -17,10 +17,6 @@ import (
 // gate; the call site is marked below so that landing it is a one-line change
 // rather than a re-reading of this function.
 func (d *daemon) serve(ctx context.Context) error {
-	// --- step 11: the self-update confirmation gate (ResolveUpdateMarkers).
-	// internal/selfupdate owns it. It runs HERE, before READY=1, and the D92
-	// disarm at boot step 4 has already run.
-
 	// Triage the previous boot's job rows before anything can lease a new one.
 	// This is the orphan recovery section 2.3 asks for at boot: a lease whose
 	// owner boot id is gone belongs to a daemon that is gone.
@@ -65,6 +61,18 @@ func (d *daemon) serve(ctx context.Context) error {
 		}
 		errc <- err
 	}()
+
+	// --- step 11: the self-update confirmation gate (ResolveUpdateMarkers,
+	// section 12.3). It runs HERE, before READY=1, deliberately: a daemon that
+	// ever signals readiness has already resolved the marker, so the judge cannot
+	// be armed against a version that demonstrably booted. Together with step 4's
+	// disarm — which has already run, from the migration runner's BeforeFirst
+	// hook — that leaves exactly one shape of unconfirmed update: a binary that
+	// never finished a boot, which is what section 12.2 claims the judge is for.
+	//
+	// It is also the finalizer that resolves the `self_update` job section 2.3
+	// left `interrupted`, so it runs AFTER the triage above that produced it.
+	d.resolveUpdateMarkers(ctx)
 
 	// --- step 12: READY=1, then the background workers.
 	if err := d.opts.Notifier.Ready(); err != nil {
@@ -128,11 +136,63 @@ func (d *daemon) serve(ctx context.Context) error {
 	// stayed healthy rather than of the systemd vocabulary.
 	go d.clearStartLimit(ctx)
 
+	// The gate's second caller: a 30 s ticker that runs ONLY while
+	// `update/pending` exists, and is stopped by the shutdown below along with
+	// the other background workers (section 12.3). Boot alone was never enough —
+	// after a refusal, section 9.4 step 7's 120 s failsafe returns THIS daemon to
+	// service and the next boot may be weeks away.
+	//
+	// It gets its OWN cancelable context rather than riding on ctx, and stopping
+	// it is the first act of the swap path below. Section 12.3 says the ticker is
+	// "stopped by the section 9.4 shutdown along with the other background
+	// workers", and section 12.1 step 7 runs that shutdown before it summons the
+	// actor — so between the two there must be no tick. A tick in that window
+	// finds `update/pending` naming a version this binary is not and
+	// `llamaman-selfupdate.service` not yet active, which is branch 3: it would
+	// close out the very swap this boot is performing, unlink the marker that is
+	// the oneshot's only trigger AND the judge's second condition, and delete the
+	// verified tarball — leaving an update that is silently skipped and cannot be
+	// reverted.
+	tickerCtx, stopTicker := context.WithCancel(ctx)
+	defer stopTicker()
+	if d.updateGate != nil {
+		go d.updateGate.RunTicker(tickerCtx)
+	}
+
 	select {
 	case err := <-errc:
 		return err
+
+	case <-d.swap:
+		// Section 12.1 step 7 (D79). This is the ONE exit from this loop that
+		// does not end the process on its own: the daemon stops serving, hands
+		// its listeners to the fd store, summons the swap actor and then WAITS to
+		// be SIGTERMed by that actor's own `systemctl restart`. It returns here
+		// only once that signal arrives, or once the 120 s failsafe expires.
+		//
+		// The ticker stops FIRST, before the drain the swap sequence begins with,
+		// for the reason stated above.
+		stopTicker()
+		swapErr := d.runSwap(ctx, errc)
+		stopGateway()
+		select {
+		case <-gatewayDone:
+		case <-time.After(gatewayStopGrace):
+		}
+		stopSupervisor()
+		select {
+		case <-supervisorDone:
+		case <-time.After(supervisorStopGrace):
+		}
+		return swapErr
+
 	case <-ctx.Done():
 	}
+
+	// The ordinary stop. ctx is already done, so the ticker is already
+	// returning; the explicit call is here so this path states the same rule the
+	// swap path does rather than relying on which context happened to be passed.
+	stopTicker()
 
 	err = d.shutdown(errc)
 

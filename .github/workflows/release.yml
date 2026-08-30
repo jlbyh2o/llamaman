@@ -1,0 +1,465 @@
+name: Release
+
+# DESIGN section 16.2, `release.yml (on tag v*)`.
+#
+# The six steps that section lists, in order: re-run the gates, build both
+# architectures with -trimpath and version ldflags, produce the two tarballs and
+# a checksums.txt signed with the ed25519 release key, generate notes from
+# Conventional Commits, publish, and then INSTALL THE PUBLISHED ARTIFACT on a
+# clean runner through the PUBLISHED install.sh — so a broken release is caught
+# before anyone else runs the one-liner.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re-)release'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.27.0'
+  NODE_VERSION: '24'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Re-run the gates. A tag is not a promise that CI was green on the commit
+  #    it points at: tags get moved, and a release is the one artifact nobody
+  #    can take back.
+  # ---------------------------------------------------------------------------
+  gate:
+    name: Gates
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - id: version
+        run: |
+          set -euo pipefail
+          version="${{ inputs.tag || github.ref_name }}"
+          case "$version" in
+            v[0-9]*) : ;;
+            *) echo "::error::$version is not a v-prefixed release tag"; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "releasing $version"
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l ./cmd ./internal)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race ./...
+
+      - name: shellcheck install.sh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck --shell=sh installer/install.sh installer/tests/run.sh
+
+      - name: installer test suite
+        run: sh installer/tests/run.sh
+
+      - name: UI typecheck, test and build
+        working-directory: ui
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test
+          npm run build
+
+  # ---------------------------------------------------------------------------
+  # 2 and 3. Build both architectures, tar them, sign the checksums file.
+  #
+  # Reproducibility (DESIGN section 16.2): -trimpath, CGO_ENABLED=0, a pinned Go
+  # and Node, npm ci against a committed lockfile, a committed go.sum, and
+  # SOURCE_DATE_EPOCH passed explicitly so the release timestamp is the only
+  # non-reproducible input. The tar is built with a fixed mtime, owner, group and
+  # sort order for the same reason.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build and sign
+    runs-on: ubuntu-24.04
+    needs: gate
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # THE SIGNING KEY MUST EXIST BEFORE ANYTHING IS BUILT, and the public half
+      # it derives must be the one already compiled into the binary. A release
+      # signed by a key no shipped binary accepts is worse than no release: every
+      # install.sh and every self-update would refuse it, and the failure would
+      # look like a corrupt download.
+      - name: Verify the release key matches the committed public key
+        env:
+          RELEASE_KEY: ${{ secrets.LLAMAMAN_RELEASE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_KEY:-}" ]; then
+            echo "::error::the LLAMAMAN_RELEASE_KEY secret is not set; see installer/README.md"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/sign"
+          cat > "$RUNNER_TEMP/sign/main.go" <<'GO'
+          // Derives the public half of the release key and compares it with the
+          // value compiled into the product, then signs a file. Written here
+          // rather than committed as a command, because a signing tool in the
+          // repository is a signing tool on every developer's machine.
+          package main
+
+          import (
+          	"crypto/ed25519"
+          	"encoding/base64"
+          	"fmt"
+          	"os"
+          	"strings"
+          )
+
+          func main() {
+          	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(os.Getenv("RELEASE_KEY")))
+          	if err != nil {
+          		fmt.Fprintln(os.Stderr, "release key is not valid base64:", err)
+          		os.Exit(1)
+          	}
+          	if len(raw) != ed25519.PrivateKeySize {
+          		fmt.Fprintf(os.Stderr, "release key is %d bytes, want %d (an ed25519 private key)\n",
+          			len(raw), ed25519.PrivateKeySize)
+          		os.Exit(1)
+          	}
+          	priv := ed25519.PrivateKey(raw)
+          	pub := base64.StdEncoding.EncodeToString(priv.Public().(ed25519.PublicKey))
+
+          	if len(os.Args) > 1 && os.Args[1] == "pubkey" {
+          		fmt.Println(pub)
+          		return
+          	}
+          	body, err := os.ReadFile(os.Args[1])
+          	if err != nil {
+          		fmt.Fprintln(os.Stderr, err)
+          		os.Exit(1)
+          	}
+          	fmt.Println(base64.StdEncoding.EncodeToString(ed25519.Sign(priv, body)))
+          }
+          GO
+          ( cd "$RUNNER_TEMP/sign" && go mod init sign >/dev/null 2>&1 || true )
+
+          derived="$(cd "$RUNNER_TEMP/sign" && go run . pubkey)"
+
+          # The gate reads THE key files the binary embeds — internal/selfupdate/keys/*.pub,
+          # loaded at runtime by selfupdate.EmbeddedKeys() — because that is the
+          # single trust root for BOTH verification paths: `llamaman
+          # verify-release`, which install.sh runs (DESIGN section 13 step 3),
+          # and the self-update pipeline (sections 12.1 step 3 and 12.2 step 0).
+          #
+          # This used to grep a second, separate key pair out of
+          # internal/cli/verifyrelease.go. Nothing asserted the two agreed, so
+          # the first real keypair would have produced a green release, a working
+          # installer, and a self-update that refused every tarball on every host
+          # forever. There is now one source; keep it that way.
+          #
+          # A key file is `#` comments plus one base64 line, so strip the comments
+          # and blanks and take the first remaining line. `|| true` because an
+          # ABSENT file is the state of a checkout before the keypair has been
+          # generated, and that case must reach the explicit message below rather
+          # than dying here with nothing but a status.
+          keyline() { grep -v '^[[:space:]]*#' "$1" 2>/dev/null | grep -v '^[[:space:]]*$' | sed -n 1p | tr -d '[:space:]' || true; }
+          committed="$(keyline internal/selfupdate/keys/release-current.pub)"
+          next="$(keyline internal/selfupdate/keys/release-next.pub)"
+
+          if [ -n "$committed" ] && [ "$derived" = "$committed" ]; then
+            echo "signing with the CURRENT release key"
+          elif [ -n "$next" ] && [ "$derived" = "$next" ]; then
+            echo "signing with the NEXT release key (rotation in progress)"
+          else
+            echo "::error::the LLAMAMAN_RELEASE_KEY secret derives a public key that is in neither"
+            echo "::error::internal/selfupdate/keys/release-current.pub nor release-next.pub."
+            echo "::error::Every shipped binary would refuse this release, and self-update would"
+            echo "::error::refuse it forever. Commit the public key first — see installer/README.md."
+            exit 1
+          fi
+
+      - name: Build both architectures
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
+          export SOURCE_DATE_EPOCH
+          COMMIT="$(git rev-parse --short HEAD)"
+          DATE="$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%dT%H:%M:%SZ)"
+          echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH" >> "$GITHUB_ENV"
+
+          # The UI is built once and embedded into both binaries; it contains no
+          # architecture-specific bytes.
+          ( cd ui && npm ci && npm run build )
+          rm -rf internal/web/dist
+          mkdir -p internal/web/dist
+          cp -R ui/dist/. internal/web/dist/
+
+          B=github.com/jlbyh2o/llamaman/internal/buildinfo
+          for arch in amd64 arm64; do
+            mkdir -p "dist/$arch"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+              -trimpath \
+              -ldflags "-s -w -X $B.Version=$VERSION -X $B.Commit=$COMMIT -X $B.Date=$DATE -X $B.Channel=stable" \
+              -o "dist/$arch/llamaman" ./cmd/llamaman
+            cp LICENSE README.md "dist/$arch/"
+          done
+
+      - name: Assert the binaries report the tag they were built for
+        run: |
+          set -euo pipefail
+          # The native one can be run; the cross build is checked by its ELF
+          # machine type, which is what would actually be wrong if GOARCH leaked.
+          got="$(dist/amd64/llamaman version | sed -n 1p)"
+          [ "$got" = "llamaman $VERSION" ] || {
+            echo "::error::amd64 binary reports '$got', want 'llamaman $VERSION'"
+            exit 1
+          }
+          file dist/arm64/llamaman | grep -q 'ARM aarch64' || {
+            echo "::error::the arm64 build is not an aarch64 ELF"
+            exit 1
+          }
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          for arch in amd64 arm64; do
+            tar --sort=name \
+                --owner=0 --group=0 --numeric-owner \
+                --mtime="@$SOURCE_DATE_EPOCH" \
+                -czf "out/llamaman_${VERSION}_linux_${arch}.tar.gz" \
+                -C "dist/$arch" llamaman LICENSE README.md
+          done
+          # install.sh ships as a release asset too, so `--version <tag>` can
+          # fetch the exact installer that release was tested with.
+          cp installer/install.sh out/install.sh
+          ls -l out
+
+      # checksums.txt is what the signature covers, and it is the ONLY thing the
+      # signature covers: every artifact is reached through it. Its name carries
+      # no version, because install.sh has to be able to ask
+      # releases/latest/download/checksums.txt for it before it knows the tag
+      # (D48, DESIGN section 13 step 2).
+      - name: Checksums and signature
+        env:
+          RELEASE_KEY: ${{ secrets.LLAMAMAN_RELEASE_KEY }}
+        run: |
+          set -euo pipefail
+          ( cd out && sha256sum llamaman_*.tar.gz install.sh > checksums.txt )
+          cat out/checksums.txt
+          ( cd "$RUNNER_TEMP/sign" && go run . "$GITHUB_WORKSPACE/out/checksums.txt" ) > out/checksums.txt.sig
+          wc -c < out/checksums.txt.sig
+
+      # The gate that makes the whole chain real: the binary about to be
+      # published verifies the release about to be published, with the key
+      # compiled into it. If this passes here it passes on the user's host, and
+      # if it fails, nothing has been published yet.
+      - name: Self-verify the release
+        run: |
+          set -euo pipefail
+          dist/amd64/llamaman verify-release \
+            --require "llamaman_${VERSION}_linux_amd64.tar.gz" \
+            --require "llamaman_${VERSION}_linux_arm64.tar.gz" \
+            --require install.sh \
+            out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-artifacts
+          path: out/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 4. Notes from Conventional Commits, and publish.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish
+    runs-on: ubuntu-24.04
+    needs: [gate, build]
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-artifacts
+          path: out
+
+      - name: Release notes from Conventional Commits
+        run: |
+          set -euo pipefail
+          previous="$(git describe --tags --abbrev=0 "${VERSION}^" 2>/dev/null || true)"
+          if [ -n "$previous" ]; then
+            range="${previous}..${VERSION}"
+            echo "changes since $previous" >&2
+          else
+            range="$VERSION"
+            echo "first release" >&2
+          fi
+
+          section() {
+            # section <heading> <type-regex>
+            body="$(git log --no-merges --pretty=format:'%s|%h' "$range" \
+              | awk -F'|' -v re="$2" '
+                  { msg = $1 }
+                  msg ~ re {
+                    sub(/^[a-z]+(\([^)]*\))?!?: /, "", msg)
+                    printf "- %s (%s)\n", msg, $2
+                  }')"
+            if [ -n "$body" ]; then
+              printf '### %s\n\n%s\n\n' "$1" "$body"
+            fi
+          }
+
+          {
+            printf '## llamaman %s\n\n' "$VERSION"
+            section 'Breaking changes' '^[a-z]+(\([^)]*\))?!:'
+            section 'Features' '^feat(\([^)]*\))?!?:'
+            section 'Fixes' '^fix(\([^)]*\))?!?:'
+            section 'Performance' '^perf(\([^)]*\))?!?:'
+            section 'Documentation' '^docs(\([^)]*\))?!?:'
+            printf '### Install\n\n'
+            printf '```sh\ncurl -fsSL https://raw.githubusercontent.com/jlbyh2o/llamaman/main/install.sh | sudo sh\n```\n\n'
+            printf 'Every artifact below is covered by `checksums.txt`, which is signed with the\n'
+            printf 'ed25519 release key compiled into the binary. To check a download yourself:\n\n'
+            printf '```sh\nllamaman verify-release <directory>\n```\n'
+          } > notes.md
+          cat notes.md
+
+      # SLSA-style provenance, published for external auditors. The trust root
+      # for self-update remains the embedded ed25519 key, because verification
+      # must work offline with no external tooling (DESIGN section 16.2 step 6).
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: out/llamaman_*.tar.gz
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: llamaman ${{ env.VERSION }}
+          body_path: notes.md
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            out/llamaman_*.tar.gz
+            out/checksums.txt
+            out/checksums.txt.sig
+            out/install.sh
+
+  # ---------------------------------------------------------------------------
+  # 5. The post-publish check. A clean runner, the PUBLISHED install.sh, the
+  #    PUBLISHED tarball, a real service manager — and /healthz. This is the step
+  #    that catches a release which builds, signs and publishes perfectly and
+  #    then cannot be installed.
+  # ---------------------------------------------------------------------------
+  install-check:
+    name: Install the published release
+    runs-on: ubuntu-24.04
+    needs: [gate, publish]
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+    steps:
+      - name: Install through the published one-liner
+        run: |
+          set -euo pipefail
+          # Fetched from the release, not from the checkout: the point is to
+          # exercise exactly the bytes a user gets.
+          curl -fsSL -o install.sh \
+            "https://github.com/${{ github.repository }}/releases/download/${VERSION}/install.sh"
+          sudo sh install.sh --version "$VERSION" --user "$USER"
+
+      - name: Assert the daemon answers
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:5526/healthz" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS "http://127.0.0.1:5526/healthz"
+          echo
+
+          reported="$(llamaman version | sed -n 1p)"
+          [ "$reported" = "llamaman $VERSION" ] || {
+            echo "::error::the installed binary reports '$reported', want 'llamaman $VERSION'"
+            exit 1
+          }
+
+      # The upgrade path of DESIGN section 13 step 11, on a real host: re-running
+      # the installer must restart the daemon and leave the state directory
+      # alone.
+      - name: Re-run the installer (the idempotent upgrade path)
+        run: |
+          set -euo pipefail
+          sudo sh install.sh --version "$VERSION" --user "$USER"
+          test -f /var/lib/llamaman/llamaman.db
+          curl -fsS "http://127.0.0.1:5526/healthz" >/dev/null
+
+      # And the promise --uninstall makes: the units go, the state directory
+      # stays (DESIGN section 13 step 12).
+      - name: Uninstall leaves the state directory intact
+        run: |
+          set -euo pipefail
+          sudo sh install.sh --uninstall --user "$USER"
+          test ! -e /etc/systemd/system/llamaman.service
+          test ! -e /usr/local/bin/llamaman
+          test -d /var/lib/llamaman
+
+      - name: Journal on failure
+        if: failure()
+        run: sudo journalctl -u llamaman -n 200 --no-pager || true

@@ -16,39 +16,46 @@ env:
   GO_VERSION: '1.27.0'
   NODE_VERSION: '24'
 
+  # Coverage gates (DESIGN sections 15 and 16.2).
+  #
+  # TARGET is what the design asks for: 80% overall, 95% on the three pure
+  # packages. FLOOR is what CI enforces today, and the two differ on purpose.
+  # Setting the gate straight to the target on a codebase that is still being
+  # built would fail every PR until the last one, which trains people to ignore
+  # the gate — so the floor is a RATCHET: it is at or just below where the tree
+  # stands now, it fails a PR that goes backwards, and it is raised toward the
+  # target as packages land. Falling between floor and target is a warning that
+  # names the gap, so the difference is visible on every run rather than
+  # forgotten in this comment.
+  COVERAGE_TARGET_TOTAL: '80'
+  COVERAGE_FLOOR_TOTAL: '65'
+  COVERAGE_TARGET_PURE: '95'
+  COVERAGE_FLOOR_PURE: '80'
+
+  # Bundle-size budget (DESIGN section 16.2). The design names the shape of the
+  # budget, not a number; these are it. They are gzipped totals over everything
+  # Vite emits, because that is what a browser actually pulls: React 19 with the
+  # router, the query cache, the Radix primitives and uPlot (~45 KB, D44).
+  BUNDLE_BUDGET_JS_KB: '420'
+  BUNDLE_BUDGET_CSS_KB: '80'
+
 # TODO(DESIGN section 16.2 / section 15): the jobs below are what exists today.
 # Still to come, each with the code it exercises:
 #   lint            — the full `make lint` set once gofumpt, staticcheck,
-#                     golangci-lint, govulncheck and shellcheck are wired
+#                     golangci-lint and govulncheck are wired (the shellcheck
+#                     half of that set already runs, in the `shellcheck` job)
 #   openapi-drift   — `make openapi && git diff --exit-code`
 #   build           — `make build-all`, uploading linux/amd64 + linux/arm64
 #   cuda-configure  — nvidia/cuda devel container, pinned llama.cpp, time-boxed
 #                     partial compile
-#   systemd-user    — dbus-run-session + systemd --user: the D-Bus control-plane
-#                     suite and the D2 topology assertions (D47)
-#   install-system  — ubuntu-24.04, real install.sh, three matrix legs
-#                     (default, --prefix, --dedicated-user)
+#   install-system  — ubuntu-24.04, real install.sh against a real service
+#                     manager, three matrix legs (default, --prefix,
+#                     --dedicated-user). The `installer` job below already runs
+#                     the whole argument, upgrade and uninstall surface against
+#                     a fake root; what is still missing is the leg that needs
+#                     a real systemd and a real published tarball
 #   no-systemd      — no PID 1 manager: degraded start, 409 systemd_unavailable
 #   e2e             — Playwright on main, tags or a label
-#
-# Also still to come, and not just jobs within this file: two whole sibling
-# workflow files that DESIGN section 16.2 specifies in detail and that do not
-# exist yet —
-#   release.yml — the tag-triggered (`v*`) release pipeline: re-run lint/
-#                 test-go/test-ui/build, produce the linux/amd64 and
-#                 linux/arm64 tarballs, sign checksums.txt with the ed25519
-#                 release key and commit its public + "next" key, publish
-#                 release notes and artifacts, and a post-publish job that
-#                 installs the published tarball via the published install.sh
-#                 and asserts /healthz
-#   nightly.yml — re-resolves the live llama.cpp stable/nightly tags, asserts
-#                 the asset names and nightly-tag.txt still parse, and re-runs
-#                 the published install.sh against the newest release
-#
-# And within the two jobs below that already exist, two requirements from the
-# section 16.2 table are missing without being called out here:
-#   test-go — no `-coverprofile`, no coverage gate, no coverage artifact upload
-#   test-ui — no `npm run test -- --coverage`, no bundle-size budget check
 
 jobs:
   test-go:
@@ -78,11 +85,77 @@ jobs:
       - name: go build
         run: CGO_ENABLED=0 go build ./...
 
+      # -covermode=atomic rather than the default `set`, because -race is on:
+      # `set` is not safe to update from several goroutines and produces counts
+      # that are quietly wrong under concurrency.
       - name: go test
-        run: go test -race ./...
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Coverage gate
+        run: |
+          set -euo pipefail
+          go tool cover -func=coverage.out > coverage.txt
+          total="$(awk '/^total:/ {gsub(/%/, "", $3); print $3}' coverage.txt)"
+
+          # pkg_coverage aggregates ONE package out of the single profile the
+          # test run already produced, rather than re-running `go test` per
+          # package. The exact-package match matters: a plain prefix test would
+          # fold internal/gguf/ggufbuild into internal/gguf and report a number
+          # for neither.
+          pkg_coverage() {
+            awk -v pkg="github.com/jlbyh2o/llamaman/$1/" '
+              NR == 1 { next }                       # the "mode:" header
+              {
+                colon = index($1, ":")
+                path = substr($1, 1, colon - 1)
+                if (index(path, pkg) != 1) next
+                rest = substr(path, length(pkg) + 1)
+                if (index(rest, "/") != 0) next      # a subpackage, not this one
+                total += $2
+                if ($3 > 0) covered += $2
+              }
+              END { if (total == 0) print "0"; else printf "%.1f\n", covered * 100 / total }
+            ' coverage.out
+          }
+
+          fail=0
+          check() {
+            # check <label> <actual> <floor> <target>
+            if awk -v a="$2" -v f="$3" 'BEGIN {exit !(a < f)}'; then
+              echo "::error::$1 coverage $2% is below the enforced floor of $3%"
+              fail=1
+            elif awk -v a="$2" -v t="$4" 'BEGIN {exit !(a < t)}'; then
+              echo "::warning::$1 coverage $2% is below the design target of $4% (floor $3%)"
+            else
+              echo "$1: $2% (target $4%)"
+            fi
+          }
+
+          check "total" "$total" "$COVERAGE_FLOOR_TOTAL" "$COVERAGE_TARGET_TOTAL"
+
+          # DESIGN section 1 invariant 5: internal/{model,fit,gguf} import
+          # nothing outside stdlib, which is exactly why they are the three
+          # packages held to the higher number — nothing in them needs a fake to
+          # be reachable, so there is no excuse for an unreached branch.
+          for pkg in model fit gguf; do
+            check "internal/$pkg" "$(pkg_coverage "internal/$pkg")" \
+              "$COVERAGE_FLOOR_PURE" "$COVERAGE_TARGET_PURE"
+          done
+
+          exit "$fail"
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-coverage
+          path: |
+            coverage.out
+            coverage.txt
+          retention-days: 14
 
   test-ui:
-    name: UI typecheck and build
+    name: UI typecheck, test and build
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -102,5 +175,182 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # `npm run test -- --coverage` is what DESIGN section 16.2 asks for, and
+      # it needs a coverage provider beside vitest. Until @vitest/coverage-v8 is
+      # in ui/package.json this runs the suite without coverage and says so,
+      # rather than failing a gate on a package that is not declared: adding it
+      # is a lockfile change, and a workflow is not where a dependency should be
+      # introduced.
+      - name: Test
+        run: |
+          set -euo pipefail
+          if node -e "require.resolve('@vitest/coverage-v8/package.json')" 2>/dev/null; then
+            npm run test -- --coverage
+          else
+            echo "::warning::@vitest/coverage-v8 is not a devDependency of ui/; running the suite without coverage"
+            npm run test
+          fi
+
       - name: Build
         run: npm run build
+
+      # The budget is over GZIPPED bytes because that is what crosses the wire,
+      # and over the whole emitted bundle rather than per-chunk, because code
+      # splitting can hide growth by moving it rather than removing it.
+      - name: Bundle-size budget
+        run: |
+          set -euo pipefail
+          total_kb() {
+            find dist -type f -name "$1" -exec gzip -c {} + 2>/dev/null | wc -c \
+              | awk '{printf "%d", ($1 + 1023) / 1024}'
+          }
+          js_kb="$(total_kb '*.js')"
+          css_kb="$(total_kb '*.css')"
+          echo "bundle: ${js_kb} KB js, ${css_kb} KB css (gzipped)"
+
+          fail=0
+          if [ "$js_kb" -gt "${BUNDLE_BUDGET_JS_KB}" ]; then
+            echo "::error::JS bundle is ${js_kb} KB gzipped, over the ${BUNDLE_BUDGET_JS_KB} KB budget"
+            fail=1
+          fi
+          if [ "$css_kb" -gt "${BUNDLE_BUDGET_CSS_KB}" ]; then
+            echo "::error::CSS bundle is ${css_kb} KB gzipped, over the ${BUNDLE_BUDGET_CSS_KB} KB budget"
+            fail=1
+          fi
+          {
+            echo "### Bundle size (gzipped)"
+            echo ""
+            echo "| asset | size | budget |"
+            echo "|---|---|---|"
+            echo "| js | ${js_kb} KB | ${BUNDLE_BUDGET_JS_KB} KB |"
+            echo "| css | ${css_kb} KB | ${BUNDLE_BUDGET_CSS_KB} KB |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$fail"
+
+  # D47: the D-Bus control-plane suite against a REAL `systemd --user` inside
+  # `dbus-run-session` on a stock runner. No privileged container and no Docker,
+  # which keeps SPEC section 1's posture clean even in CI, and it exercises the
+  # identical StartUnit / JobRemoved / sub-state / EnableUnitFiles paths the
+  # product uses.
+  #
+  # The point of the job is that these tests RUN. Every one of them is written
+  # to skip when no user bus is reachable, so a job that merely reports "ok" has
+  # proved nothing — the assertion at the end is what makes the job meaningful.
+  systemd-user:
+    name: systemd --user D-Bus suite
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install dbus-run-session
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dbus systemd
+
+      - name: Run the suite under a user manager
+        env:
+          SUITE_LOG: ${{ runner.temp }}/systemd-user.log
+        run: |
+          set -euo pipefail
+          XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          export XDG_RUNTIME_DIR
+          sudo mkdir -p "$XDG_RUNTIME_DIR"
+          sudo chown "$(id -u):$(id -g)" "$XDG_RUNTIME_DIR"
+          sudo chmod 0700 "$XDG_RUNTIME_DIR"
+
+          SYSTEMD_BIN=/usr/lib/systemd/systemd
+          [ -x "$SYSTEMD_BIN" ] || SYSTEMD_BIN=/lib/systemd/systemd
+          export SYSTEMD_BIN
+
+          # A file rather than `bash -c "…"`: the body needs $-expansion at run
+          # time and none at workflow-expansion time, and nesting three levels of
+          # quoting to say that is how a CI script acquires a bug nobody can see.
+          cat > "$RUNNER_TEMP/run-suite.sh" <<'SCRIPT'
+          set -euo pipefail
+          "$SYSTEMD_BIN" --user --unit=basic.target &
+          manager=$!
+          for _ in $(seq 1 30); do
+            if systemctl --user show --property=Version >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          systemctl --user --version | sed -n 1p
+          status=0
+          go test -race -v ./internal/systemd/... 2>&1 | tee "$SUITE_LOG" || status=$?
+          kill "$manager" 2>/dev/null || true
+          exit "$status"
+          SCRIPT
+
+          dbus-run-session -- bash "$RUNNER_TEMP/run-suite.sh"
+
+      # A skipped integration test is the failure mode this job exists to catch:
+      # it means the manager never came up and the suite quietly proved nothing.
+      - name: Assert the bus tests actually ran
+        env:
+          SUITE_LOG: ${{ runner.temp }}/systemd-user.log
+        run: |
+          set -euo pipefail
+          log="$SUITE_LOG"
+          fail=0
+          for t in TestUserManagerRoundTrip TestUserManagerNoSuchUnit \
+                   TestUserManagerExecControllerAgrees TestUserManagerJournalRoundTrip; do
+            if grep -q -- "--- SKIP: $t" "$log"; then
+              echo "::error::$t skipped: no user manager was reachable, so this job proved nothing"
+              fail=1
+            elif grep -q -- "--- PASS: $t" "$log"; then
+              echo "$t: ran against the live bus"
+            else
+              echo "::error::$t neither passed nor skipped; see the log"
+              fail=1
+            fi
+          done
+          exit "$fail"
+
+      - name: Upload the manager log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: systemd-user-log
+          path: ${{ runner.temp }}/systemd-user.log
+          retention-days: 7
+
+  # DESIGN section 15: "install.sh — shellcheck, plus the ubuntu-24.04 job".
+  # This is the first half, and the mechanical suite that goes with it.
+  shellcheck:
+    name: install.sh shellcheck and tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck --version
+
+      # --shell=sh is not redundant with the shebang: it is the assertion. It
+      # holds the script to POSIX sh and rejects the bashisms — `local`, arrays,
+      # [[ ]], $'…' — that work on a developer's machine and fail on the dash
+      # that IS /bin/sh on every Debian and Ubuntu host this installs onto.
+      - name: shellcheck
+        run: shellcheck --shell=sh installer/install.sh installer/tests/run.sh
+
+      # Belt and braces: dash is the interpreter the one-liner actually meets.
+      # A parse error here is an install that dies halfway on the most common
+      # target distribution.
+      - name: Parse under dash
+        run: |
+          sudo apt-get install -y --no-install-recommends dash
+          dash -n installer/install.sh
+          dash -n installer/tests/run.sh
+
+      # The mechanical suite: argument parsing, the download and verification
+      # path, the upgrade branch, both uninstall consent gates and D48's
+      # truncated-pipe property, all against a fake root with stubbed
+      # systemctl/curl. No systemd call and no network request happens.
+      - name: installer test suite
+        run: sh installer/tests/run.sh

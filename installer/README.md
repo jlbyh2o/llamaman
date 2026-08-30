@@ -1,11 +1,175 @@
-# installer/
+# `installer/`
 
-`install.sh` — the one-liner that installs Llama Man on a fresh host. Its
-argument surface, its ordered steps, its uninstall path, and the guarantee that
+```
+installer/
+├── install.sh          the one-liner (DESIGN section 13)
+└── tests/run.sh        its mechanical suite
+```
+
+`install.sh` is the one-liner that installs Llama Man on a fresh host. Its
+argument surface, its ordered steps, its uninstall path and the guarantee that
 `--uninstall` leaves the state directory intact are specified in **DESIGN
-section 13**; the CI matrix that exercises it on a real `ubuntu-24.04` runner
-(default, `--prefix`, `--dedicated-user`) is **DESIGN section 16.2**, job
-`install-system`.
+section 13**; the CI that exercises it is **DESIGN section 16.2**.
 
-The script itself is not written yet: it installs units and a binary that do not
-exist. It lands with DESIGN section 13.
+```sh
+curl -fsSL https://raw.githubusercontent.com/jlbyh2o/llamaman/main/installer/install.sh | sudo sh
+```
+
+## Shape
+
+POSIX `sh` — no bashisms, no `local`, no arrays — because `/bin/sh` is `dash` on
+every Debian and Ubuntu host this installs onto. It is shellcheck-clean under
+`--shell=sh`, which is the assertion rather than a formality: that flag is what
+rejects the constructs that work on a developer's `bash` and fail on the target.
+
+**The whole script is a `main "$@"` invoked on the last line (D48).** A
+`curl … | sh` pipe truncated mid-transfer feeds the shell a prefix of the file.
+At top level that prefix would *execute* — half an uninstall, a binary with no
+units, a state directory created and abandoned. Wrapped, a truncated copy defines
+some functions, reaches EOF without ever calling `main`, and does nothing.
+`installer/tests/run.sh` asserts this at twenty truncation points.
+
+**The binary writes the units, not the script.** Step 7 is one call to
+`llamaman install-units`, so the unit and polkit content has one source of truth,
+is testable in Go, and the same command is the F16 repair path.
+
+**No `jq`, ever.** Step 10 prints the setup token by running plain
+`llamaman status` and echoing its `Setup` block verbatim. Step 1's preconditions
+require only `curl` *or* `wget`; hand-parsing JSON in POSIX `sh` is exactly the
+fragility this script avoids elsewhere.
+
+## Flags
+
+| flag | |
+|---|---|
+| `--version <tag>` | install this release instead of the latest one; `local` installs from `dist/` (see below) |
+| `--user <name>` | the account the daemon runs as; defaults to `$SUDO_USER` |
+| `--dedicated-user` | create and use a locked-down `llamaman` system account |
+| `--user-units` | the D2 topology: the account's own `systemd --user` manager, no polkit at all |
+| `--port <n>` | the management port to seed (default 5526) |
+| `--prefix <dir>` | where the binary goes (default `/usr/local/bin`, or `~<user>/.local/bin` with `--user-units`) |
+| `--no-autostart-grant` | omit the polkit `manage-unit-files` grant |
+| `--no-start` | install everything, start nothing — step 2 of section 12.4's downgrade procedure |
+| `--repair-polkit` | rewrite the polkit files even when they already match |
+| `--dry-run` | fetch and verify for real, print every host change, write none of them |
+| `--uninstall` | stop, disable and remove the units, the polkit files and the binary |
+| `--purge` | with `--uninstall`, also remove the state directory |
+| `--purge-models` | with `--purge`, also remove a `--dedicated-user` install's Hugging Face cache |
+| `--root <dir>` | testing only: treat `<dir>` as `/`, with stubbed `systemctl`/`curl` on `$PATH` |
+
+Re-running is the upgrade path: the new binary is installed, `install-units` is
+re-run, and `llamaman.service` is restarted. **Instance units are never touched**,
+so an upgrade does not interrupt inference.
+
+## The release trust root
+
+Step 3 does two checks, in this order:
+
+1. `sha256sum -c` in the shell, against the one line of `checksums.txt` that
+   names the tarball this host downloaded.
+2. `llamaman verify-release`, run by the binary just extracted, which verifies
+   the ed25519 signature of `checksums.txt` against a public key **compiled into
+   the binary**. No gpg, no minisign, no keyring, and never a silent skip.
+
+`checksums.txt` has a version-free name on purpose: it is the only asset
+`releases/latest/download/` can be asked for before the tag is known, and the
+asset names inside it are what resolve `latest` to a concrete version — no
+GitHub API call, so the anonymous 60/hour limit can never make this installer
+fail intermittently (D48).
+
+### Generating the release keypair
+
+The public key is committed; the private half lives only in repository secrets.
+Until it exists, `verify-release` refuses with a message naming this file, and
+`release.yml` refuses to publish — both by design, because an unverifiable
+release is worse than none.
+
+**There is exactly one trust root, and it is `internal/selfupdate/keys/`.** Two
+verification paths read it — `llamaman verify-release`, which this installer
+runs, and the self-update pipeline (DESIGN sections 12.1 step 3 and 12.2
+step 0) — and both reach it through `selfupdate.EmbeddedKeys()`. Do not add a
+second copy of a public key anywhere. An earlier layout kept one pair here and
+another in `internal/cli`, with nothing asserting they agreed; the first real
+keypair generated by this procedure would have produced a green release, a
+working installer, and a self-update that refused every tarball on every host
+forever, with a failure that reads like a corrupt download.
+
+```sh
+# Generate a keypair. Run this OFFLINE, once, and keep nothing on disk after.
+cat > /tmp/genkey.go <<'EOF'
+package main
+
+import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+)
+
+func main() {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("private (repository secret LLAMAMAN_RELEASE_KEY):")
+	fmt.Println(base64.StdEncoding.EncodeToString(priv))
+	fmt.Println("public (internal/selfupdate/keys/release-current.pub):")
+	fmt.Println(base64.StdEncoding.EncodeToString(pub))
+}
+EOF
+cd "$(mktemp -d)" && cp /tmp/genkey.go main.go && go mod init genkey && go run .
+```
+
+Then:
+
+1. Put the **private** value in the `LLAMAMAN_RELEASE_KEY` repository secret.
+   Nowhere else — not in a file, not in a password note that syncs, not in this
+   repository.
+2. Put the **public** value on the single non-comment line of
+   `internal/selfupdate/keys/release-current.pub` and commit it — replacing the
+   placeholder, whose private half was discarded so that an ungenerated keypair
+   fails closed. Release `v1` of the binary before signing anything with it.
+3. Shred `/tmp/genkey.go` and the scratch directory.
+
+`release.yml` derives the public half from the secret before it builds anything
+and refuses the release if it is in neither `release-current.pub` nor
+`release-next.pub`. A release signed by a key no shipped binary accepts would
+look to every user exactly like a corrupt download.
+
+**Rotation** needs no flag day, which is what the second key is for: publish a
+release whose binary carries the new key in
+`internal/selfupdate/keys/release-next.pub`, wait for it to propagate, then start
+signing with it. Binaries from before the rotation accept the new signature and
+binaries from after it accept the old.
+
+## Local installs
+
+`--version local` installs from `dist/llamaman` (override the directory with
+`LLAMAMAN_DIST_DIR`), which is what `make install-local` uses. It is the one path
+where the signature is not checked, because a local build has none — and it says
+so on stderr, twice. Do not use it on a host you care about.
+
+## The test suite
+
+```sh
+sh installer/tests/run.sh              # everything
+sh installer/tests/run.sh uninstall    # only tests whose name matches
+```
+
+Fifty-one cases, each in a fresh sandbox: a fake root, a `$PATH` whose
+`systemctl`, `loginctl`, `runuser`, `curl`, `useradd`, `id`, `getent`, `chown`,
+`install`, `date` and `sleep` only record what they were asked to do, and a
+genuine signed-shaped tarball. **No systemd call and no network request happens
+at any point, and nothing outside the sandbox is written.**
+
+What is exercised for real: argument parsing and every refusal, the host's own
+`sha256sum` against a real tarball, `tar` extraction, directory creation, the
+arguments handed to `install-units`, the first-install-versus-upgrade branch,
+both uninstall consent gates, the `--user-units` topology end to end, and D48's
+truncated-pipe property.
+
+CI runs the suite in the `shellcheck` job beside `shellcheck --shell=sh` and a
+`dash -n` parse. What is still missing, and is DESIGN section 16.2's
+`install-system` job, is the leg that needs a *real* service manager and a *real*
+published tarball; `release.yml`'s `install-check` job already covers that shape
+at publish time, and `nightly.yml` re-runs it every night.

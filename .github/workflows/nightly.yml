@@ -1,0 +1,188 @@
+name: Nightly
+
+# DESIGN section 16.2, `nightly.yml`: "re-resolves the live llama.cpp stable and
+# nightly tags and asserts the asset names and nightly-tag.txt still parse;
+# re-runs the published install.sh against the newest release".
+#
+# Neither job tests our code against a fixture. Both test the WORLD against our
+# assumptions, which is the only thing a nightly is for: upstream renames an
+# asset, drops nightly-tag.txt from a release, or changes a tag shape, and the
+# first person to find out should be us rather than a user whose install fails.
+# DESIGN section 15 lists this under "not testable in CI, with compensating
+# controls" — this file is the compensating control.
+
+on:
+  schedule:
+    # 05:20 UTC: after the ggml-org release cadence, before European mornings.
+    - cron: '20 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.27.0'
+  UPSTREAM: 'ggml-org/llama.cpp'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The llama.cpp tag re-resolution of DESIGN section 6.2.
+  #
+  #   stable  — GET /releases/latest -> a semver tag; then that release's
+  #             nightly-tag.txt asset -> the pinned b#####, which is what is
+  #             actually fetched or built.
+  #   nightly — GET /releases?per_page=50, keep `prerelease && tag ~ ^b\d+$`,
+  #             sort by numeric build id descending.
+  #
+  # Every assumption in those two rows is asserted here, one at a time, so a
+  # failure names WHICH one broke rather than reporting that resolution failed.
+  # ---------------------------------------------------------------------------
+  llamacpp-tags:
+    name: Re-resolve the llama.cpp tags
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # The workflow token raises the anonymous 60/hour limit to 1000/hour for
+      # this repository. The PRODUCT never relies on that — D48 and section 6.2
+      # both route around the API precisely because a user has no token — but a
+      # scheduled job that hits the API on purpose may as well authenticate.
+      - name: Resolve the stable channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api "repos/$UPSTREAM/releases/latest")"
+
+          tag="$(printf '%s' "$latest" | jq -r '.tag_name')"
+          echo "stable tag: $tag"
+          case "$tag" in
+            v[0-9]*) : ;;
+            *)
+              echo "::error::the llama.cpp stable release tag is '$tag', not the vN.N.N shape section 6.2 parses"
+              exit 1
+              ;;
+          esac
+
+          # nightly-tag.txt is what turns a semver release into the concrete
+          # b##### build the product installs. Section 6.2's stable row is a
+          # two-step resolution and this asset is the second step; without it
+          # there is no stable channel at all.
+          url="$(printf '%s' "$latest" | jq -r '.assets[] | select(.name == "nightly-tag.txt") | .browser_download_url')"
+          if [ -z "$url" ] || [ "$url" = "null" ]; then
+            echo "::error::release $tag publishes no nightly-tag.txt; the stable channel cannot resolve a build id"
+            printf '%s' "$latest" | jq -r '.assets[].name' | sed 's/^/  asset: /'
+            exit 1
+          fi
+
+          build="$(curl -fsSL "$url" | tr -d '[:space:]')"
+          echo "stable $tag pins build $build"
+          case "$build" in
+            b[0-9]*) : ;;
+            *)
+              echo "::error::nightly-tag.txt contains '$build', not the b##### shape section 6.2 parses"
+              exit 1
+              ;;
+          esac
+
+          {
+            echo "### llama.cpp stable"
+            echo ""
+            echo "\`$tag\` pins build \`$build\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve the nightly channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The exact query section 6.2 specifies, and the exact filter: a
+          # prerelease whose tag is b followed by digits, newest build id first.
+          newest="$(gh api "repos/$UPSTREAM/releases?per_page=50" \
+            --jq '[.[] | select(.prerelease and (.tag_name | test("^b[0-9]+$")))]
+                  | sort_by(.tag_name | ltrimstr("b") | tonumber)
+                  | reverse | .[0].tag_name')"
+
+          if [ -z "$newest" ] || [ "$newest" = "null" ]; then
+            echo "::error::no llama.cpp release in the newest 50 matches the nightly filter (prerelease and ^b[0-9]+$)"
+            exit 1
+          fi
+          echo "newest nightly: $newest"
+
+          # The asset names section 6.4's prebuilt pipeline downloads. A rename
+          # upstream is the single most likely way the prebuilt path breaks, and
+          # it breaks silently: the fallback would build from source for every
+          # user on every host (D18) and nobody would know why builds got slow.
+          assets="$(gh api "repos/$UPSTREAM/releases/tags/$newest" --jq '.assets[].name')"
+          printf '%s\n' "$assets" | sed 's/^/  asset: /'
+
+          fail=0
+          for pattern in 'ubuntu.*x64' 'ubuntu.*arm64'; do
+            if ! printf '%s\n' "$assets" | grep -Eq "$pattern"; then
+              echo "::error::release $newest publishes no asset matching /$pattern/; the prebuilt pipeline has nothing to fetch for that architecture"
+              fail=1
+            fi
+          done
+
+          {
+            echo "### llama.cpp nightly"
+            echo ""
+            echo "newest prerelease: \`$newest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$fail"
+
+      # The parsers themselves, against the live answers. The step above proves
+      # the shapes are still what we expect; this proves OUR code still agrees,
+      # which is a different claim and the one that actually ships.
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run the channel-resolution tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: go test ./internal/llamacpp/... ./internal/toolchain/...
+
+  # ---------------------------------------------------------------------------
+  # The published one-liner, against the newest published release, on a clean
+  # runner. This is the same check release.yml runs once at publish time — run
+  # again every night, because what breaks an installer between releases is
+  # rarely the installer: a GitHub redirect changes, an asset is deleted, a
+  # release is edited, the raw.githubusercontent copy drifts from the tagged one.
+  # ---------------------------------------------------------------------------
+  install-latest:
+    name: Install the newest published release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install through the published one-liner
+        run: |
+          set -euo pipefail
+          curl -fsSL -o install.sh \
+            "https://raw.githubusercontent.com/${{ github.repository }}/main/installer/install.sh"
+          sudo sh install.sh --user "$USER"
+
+      - name: Assert the daemon answers
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5526/healthz >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:5526/healthz
+          echo
+          llamaman version
+
+      - name: Doctor
+        run: llamaman doctor --format=text || true
+
+      - name: Uninstall
+        run: |
+          set -euo pipefail
+          sudo sh install.sh --uninstall --user "$USER"
+          test ! -e /usr/local/bin/llamaman
+          test -d /var/lib/llamaman
+
+      - name: Journal on failure
+        if: failure()
+        run: sudo journalctl -u llamaman -n 200 --no-pager || true
