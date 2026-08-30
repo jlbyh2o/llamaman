@@ -42,3 +42,6 @@ node_modules/
 # without a Node toolchain (DESIGN section 16.1).
 /internal/web/dist/*
 !/internal/web/dist/index.html
+
+# Test stub binaries are built on demand by the tests
+/testdata/stubllama/stubllama
