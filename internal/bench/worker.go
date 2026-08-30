@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/procx"
@@ -201,14 +202,21 @@ func (w *Worker) Run(ctx context.Context, t *jobs.Task) (jobs.Outcome, error) {
 	// every llama.cpp activation, section 6.6 step 1 — and the instances stay down
 	// until the next boot. One transient SQLite error must not cost that, so this
 	// path goes through w.fail like every other exit, and w.fail restores first.
+	startedAt := w.svc.now()
+	var startSink events.Sink
 	if err := w.svc.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
-		_, err := w.svc.store.SetBenchRunState(ctx, tx, run.ID, model.BenchRunning,
-			w.svc.now().UnixMilli())
-		return err
+		if _, err := w.svc.store.SetBenchRunState(ctx, tx, run.ID, model.BenchRunning,
+			startedAt.UnixMilli()); err != nil {
+			return err
+		}
+		started := run
+		started.State = model.BenchRunning
+		return w.svc.appendEvent(ctx, tx, started, startedAt, "bench_started",
+			model.LevelInfo, fmt.Sprintf("%s started", run.Name), &startSink)
 	}); err != nil {
 		return w.fail(ctx, run, err), nil
 	}
-	w.svc.publish(run, w.svc.now(), "bench_started")
+	w.svc.publish(&startSink)
 
 	done, failed := countFinished(points)
 	canceled := false
@@ -290,6 +298,7 @@ func (w *Worker) Run(ctx context.Context, t *jobs.Task) (jobs.Outcome, error) {
 		message = fmt.Sprintf("%d of %d points failed", failed, run.PointsTotal)
 	}
 
+	finishSink := &events.Sink{}
 	commit := func(ctx context.Context, tx store.Tx, _ model.JobState) error {
 		var msg *string
 		if message != "" {
@@ -299,15 +308,32 @@ func (w *Worker) Run(ctx context.Context, t *jobs.Task) (jobs.Outcome, error) {
 			done, failed, msg, now.UnixMilli()); err != nil {
 			return err
 		}
-		_, err := w.svc.store.ReleaseBenchLease(ctx, tx, t.Job().ID)
-		return err
+		if _, err := w.svc.store.ReleaseBenchLease(ctx, tx, t.Job().ID); err != nil {
+			return err
+		}
+		finished := run
+		finished.State = state
+		level := model.LevelInfo
+		if state == model.BenchFailed {
+			level = model.LevelError
+		}
+		summary := message
+		if summary == "" {
+			summary = fmt.Sprintf("%s finished %d of %d points", run.Name, done, run.PointsTotal)
+		}
+		return w.svc.appendEvent(ctx, tx, finished, now, "bench_finished", level, summary,
+			finishSink)
 	}
 
-	defer w.svc.publish(run, now, "bench_finished")
+	// AFTER the closing transaction, not on the way out of this function: the
+	// old `defer` published before commit had even been attempted, so a frame
+	// could describe a finish that never landed.
+	out := jobs.Succeeded(commit)
 	if state == model.BenchFailed {
-		return jobs.Failed(code, message, commit), nil
+		out = jobs.Failed(code, message, commit)
 	}
-	return jobs.Succeeded(commit), nil
+	out.AfterCommit = func() { w.svc.publish(finishSink) }
+	return out, nil
 }
 
 // load reads the run and its points.
@@ -550,20 +576,32 @@ func lastLine(s string) string {
 
 // appendEvent writes a `bench` category event inside the caller's transaction.
 func (s *Service) appendEvent(ctx context.Context, tx store.Tx, run store.BenchRun,
-	now time.Time, action string, level model.EventLevel, message string) error {
+	now time.Time, action string, level model.EventLevel, message string,
+	sink *events.Sink) error {
 
 	if s.events == nil {
 		return nil
 	}
-	return s.events.Append(ctx, tx, s.newEvent(run, now, action, level, message))
+	ev := s.newEvent(run, now, action, level, message)
+	if err := s.events.Append(ctx, tx, ev); err != nil {
+		return err
+	}
+	sink.Add(ev)
+	return nil
 }
 
-// publish fans an event out AFTER the transaction that wrote it has committed.
-func (s *Service) publish(run store.BenchRun, now time.Time, action string) {
+// publish fans the collected rows out AFTER the transaction that wrote them has
+// committed, and publishes those rows rather than lookalikes minted beside
+// them: a live frame must carry the ULID, level and to_state its row holds, or
+// internal/sse's Last-Event-ID dedup cannot tell a replayed row from its live
+// twin and a reconnecting client renders the run's history twice.
+func (s *Service) publish(sink *events.Sink) {
 	if s.events == nil {
 		return
 	}
-	s.events.Publish(s.newEvent(run, now, action, model.LevelInfo, run.Name))
+	for _, ev := range sink.Drain() {
+		s.events.Publish(ev)
+	}
 }
 
 func (s *Service) newEvent(run store.BenchRun, now time.Time, action string,

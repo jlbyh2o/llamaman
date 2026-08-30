@@ -338,9 +338,16 @@ func (q *Queue) finish(ctx context.Context, t *Task, out Outcome, runErr error) 
 		return
 	}
 
+	// The rewrites below rebuild the Outcome around the worker's own Commit; the
+	// hook that publishes what that Commit appends belongs to the same write and
+	// travels with it. A deferral is the one case that drops it, because a
+	// deferral runs no Commit at all.
+	afterCommit := out.AfterCommit
+
 	if runErr != nil {
 		if d, ok := asDeferral(runErr); ok {
 			out, runErr = Deferred(d), nil
+			afterCommit = nil
 		}
 	}
 	if runErr != nil {
@@ -368,8 +375,15 @@ func (q *Queue) finish(ctx context.Context, t *Task, out Outcome, runErr error) 
 	fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 	defer cancel()
 
+	// Whether the domain write ran at all, which is what decides if there is
+	// anything for afterCommit to publish. It is set inside the transaction and
+	// only ever read after Write returned nil, so no commit that rolled back can
+	// reach the wire.
+	var domainWritten bool
+
 	err := q.s.Write(fctx, func(ctx context.Context, tx store.Tx) error {
 		now := ms(q.now())
+		domainWritten = false
 		switch {
 		case out.State == model.JobQueued:
 			// A deferral moves no domain row: nothing about the activity changed,
@@ -389,6 +403,7 @@ func (q *Queue) finish(ctx context.Context, t *Task, out Outcome, runErr error) 
 				strPtr(out.ErrorCode), strPtr(out.ErrorMessage)); err != nil {
 				return err
 			}
+			domainWritten = true
 			return commit(ctx, tx, q, t.job, out, model.JobQueued)
 
 		default:
@@ -400,10 +415,16 @@ func (q *Queue) finish(ctx context.Context, t *Task, out Outcome, runErr error) 
 				strPtr(out.ErrorCode), strPtr(out.ErrorMessage), now); err != nil {
 				return err
 			}
+			domainWritten = true
 			return commit(ctx, tx, q, t.job, out, out.State)
 		}
 	})
 	if err == nil {
+		// The row has committed, so the frame describes something that happened.
+		if domainWritten && afterCommit != nil {
+			afterCommit()
+		}
+		q.notify(ctx, t.job.ID)
 		return
 	}
 	q.log.Error("failed to close job", "job", t.job.ID, "kind", t.job.Kind, "error", err)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/gguf"
 	"github.com/jlbyh2o/llamaman/internal/hf/cache"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
@@ -403,6 +404,7 @@ func (s *Service) reconcile(ctx context.Context, rootID string, res cache.Result
 func (s *Service) upsertGroup(ctx context.Context, rootID string, repo cache.RepoEntry,
 	snap cache.SnapshotEntry, g Group, at int64) (id string, isNew bool, err error) {
 
+	var sink events.Sink
 	err = s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		existing, ferr := s.store.LocalModelByIdentity(ctx, tx, rootID, repo.RepoID, snap.Revision, g.PrimaryFile)
 		switch {
@@ -458,11 +460,15 @@ func (s *Service) upsertGroup(ctx context.Context, rootID string, repo cache.Rep
 				Action: "model_scanned", SubjectID: &id,
 				ToState: statePtr(row.State),
 				Message: "found " + repo.RepoID + " " + g.PrimaryFile + " in the cache",
-			})
+			}, &sink)
 		}
 		return nil
 	})
-	return id, isNew, err
+	if err != nil {
+		return id, isNew, err
+	}
+	s.publish(&sink)
+	return id, isNew, nil
 }
 
 // pairProjectors applies §7.2's auto-pairing across one snapshot's groups.
@@ -541,7 +547,10 @@ func (s *Service) markMissing(ctx context.Context, rootID string, res cache.Resu
 		}
 	}
 
-	var n int64
+	var (
+		n    int64
+		sink events.Sink
+	)
 	err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		rows, err := s.store.LocalModels(ctx, tx, store.ModelFilter{
 			RootID: rootID,
@@ -568,14 +577,18 @@ func (s *Service) markMissing(ctx context.Context, rootID string, res cache.Resu
 				Level: model.LevelWarn, Category: model.CategoryModel, Actor: model.ActorSystem,
 				Action: "model_missing", SubjectID: &id, FromState: &from, ToState: &to,
 				Message: m.RepoID + " " + m.PrimaryFile + " is no longer on disk",
-			}); err != nil {
+			}, &sink); err != nil {
 				return err
 			}
 			n++
 		}
 		return nil
 	})
-	return n, err
+	if err != nil {
+		return n, err
+	}
+	s.publish(&sink)
+	return n, nil
 }
 
 // recordStrays upserts what the walk found and removes the rows whose files are

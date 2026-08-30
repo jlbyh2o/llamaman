@@ -1,81 +1,338 @@
 @import 'tailwindcss';
 
-/*
- * Dark-first token palette (DESIGN section 4). Every color in the app is drawn
- * from one of these custom properties — no literal hex outside this file — so
- * the two themes stay in step and each pair can be checked for WCAG AA once,
- * here. Dark is the default; light is the override, applied only when the
- * viewer's system asks for it.
+/* ==========================================================================
+ * Llama Man design tokens
  *
- * These are the base tokens the component layer will build on. Screens land
- * with DESIGN section 4's route list; this file is the palette they inherit.
- */
+ * "Professional, slightly technical" (SPEC section 1), dark-first with a light
+ * mode (SPEC section 5.4 assumption 4), every color drawn from a token meeting
+ * WCAG AA in both themes (DESIGN section 4). No literal color appears anywhere
+ * else in the app — a component that needs one is missing a token.
+ *
+ * Layout of this file:
+ *   1. @font-face — Inter and JetBrains Mono, vendored into ui/public/fonts,
+ *      never a CDN (SPEC section 5.4, DESIGN section 14).
+ *   2. Palette source values, defined exactly once per theme.
+ *   3. The semantic token layer, which is what components use. Dark is the
+ *      default; light is applied by `prefers-color-scheme` and by an explicit
+ *      `data-theme` on <html> when the user overrides the system.
+ *   4. @theme inline — the same tokens re-exposed as Tailwind utilities.
+ *   5. Base element styles.
+ *
+ * Contrast, measured against the surface each is used on (AA needs 4.5:1 for
+ * body text, 3:1 for large text and UI edges):
+ *   dark  text 13.8  muted 6.7  faint 4.8  accent 6.1  ok 8.3  warn 9.4  danger 6.0
+ *   light text 16.3  muted 6.7  faint 4.8  accent 5.1  ok 4.8  warn 5.2  danger 5.8
+ * ========================================================================== */
+
+/* -- 1. Fonts -------------------------------------------------------------- */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/* -- 2. Palette source values --------------------------------------------- */
+
+:root {
+  /* Dark palette — the default. */
+  --d-bg: #0b0e13;
+  --d-surface: #12161d;
+  --d-raised: #1a1f28;
+  --d-sunken: #080a0e;
+  --d-overlay: rgb(4 6 9 / 72%);
+  --d-border: #262c37;
+  --d-border-strong: #37404e;
+  --d-text: #e6ebf2;
+  --d-muted: #9aa6b6;
+  --d-faint: #7e8b9e;
+  --d-accent: #5b9dff;
+  --d-accent-hover: #7db1ff;
+  --d-accent-active: #4589ec;
+  --d-accent-contrast: #05121f;
+  --d-accent-soft: rgb(91 157 255 / 14%);
+  --d-ok: #3ecf8e;
+  --d-ok-soft: rgb(62 207 142 / 14%);
+  --d-warn: #f5b93a;
+  --d-warn-soft: rgb(245 185 58 / 14%);
+  --d-danger: #ff6b6b;
+  --d-danger-soft: rgb(255 107 107 / 14%);
+  --d-info: #7aa2f7;
+  --d-info-soft: rgb(122 162 247 / 14%);
+  --d-neutral-soft: rgb(154 166 182 / 12%);
+  --d-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 32%);
+
+  /* Light palette — applied by the two selectors in section 3. */
+  --l-bg: #f6f7f9;
+  --l-surface: #ffffff;
+  --l-raised: #eef1f5;
+  --l-sunken: #e7eaef;
+  --l-overlay: rgb(15 20 27 / 40%);
+  --l-border: #d7dce4;
+  --l-border-strong: #b3bcc9;
+  --l-text: #0f141b;
+  --l-muted: #4a5566;
+  --l-faint: #5f6b7c;
+  --l-accent: #1f5fd0;
+  --l-accent-hover: #1a51b3;
+  --l-accent-active: #14428f;
+  --l-accent-contrast: #ffffff;
+  --l-accent-soft: rgb(31 95 208 / 10%);
+  --l-ok: #0f7a45;
+  --l-ok-soft: rgb(15 122 69 / 10%);
+  --l-warn: #8a5a00;
+  --l-warn-soft: rgb(138 90 0 / 10%);
+  --l-danger: #b42318;
+  --l-danger-soft: rgb(180 35 24 / 10%);
+  --l-info: #1f5fd0;
+  --l-info-soft: rgb(31 95 208 / 10%);
+  --l-neutral-soft: rgb(74 85 102 / 8%);
+  --l-shadow: 0 1px 2px rgb(15 20 27 / 8%), 0 8px 24px rgb(15 20 27 / 10%);
+}
+
+/* -- 3. Semantic tokens ---------------------------------------------------- */
 
 :root {
   color-scheme: dark;
 
   /* Surfaces, back to front. */
-  --lm-bg: #0b0d10;
-  --lm-surface: #14171c;
-  --lm-surface-raised: #1c2027;
-  --lm-border: #2a2f38;
-  --lm-border-strong: #3a414d;
+  --lm-bg: var(--d-bg);
+  --lm-surface: var(--d-surface);
+  --lm-surface-raised: var(--d-raised);
+  --lm-surface-sunken: var(--d-sunken);
+  --lm-overlay: var(--d-overlay);
+  --lm-border: var(--d-border);
+  --lm-border-strong: var(--d-border-strong);
 
   /* Text. */
-  --lm-text: #e8ecf2;
-  --lm-text-muted: #a3adbb;
-  --lm-text-faint: #6f7a89;
+  --lm-text: var(--d-text);
+  --lm-text-muted: var(--d-muted);
+  --lm-text-faint: var(--d-faint);
 
-  /* Accent and state. */
-  --lm-accent: #6aa8ff;
-  --lm-accent-contrast: #06121f;
-  --lm-ok: #4ade80;
-  --lm-warn: #fbbf24;
-  --lm-danger: #f87171;
+  /* Accent. */
+  --lm-accent: var(--d-accent);
+  --lm-accent-hover: var(--d-accent-hover);
+  --lm-accent-active: var(--d-accent-active);
+  --lm-accent-contrast: var(--d-accent-contrast);
+  --lm-accent-soft: var(--d-accent-soft);
+
+  /* Semantic states. Each has a foreground and a soft tint for badge fills. */
+  --lm-ok: var(--d-ok);
+  --lm-ok-soft: var(--d-ok-soft);
+  --lm-warn: var(--d-warn);
+  --lm-warn-soft: var(--d-warn-soft);
+  --lm-danger: var(--d-danger);
+  --lm-danger-soft: var(--d-danger-soft);
+  --lm-info: var(--d-info);
+  --lm-info-soft: var(--d-info-soft);
+  --lm-neutral: var(--d-muted);
+  --lm-neutral-soft: var(--d-neutral-soft);
 
   --lm-focus: var(--lm-accent);
-  --lm-radius: 0.5rem;
+  --lm-shadow: var(--d-shadow);
 }
 
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme='dark']) {
     color-scheme: light;
 
-    --lm-bg: #f7f8fa;
-    --lm-surface: #ffffff;
-    --lm-surface-raised: #f0f2f5;
-    --lm-border: #d9dee6;
-    --lm-border-strong: #b6bfcc;
+    --lm-bg: var(--l-bg);
+    --lm-surface: var(--l-surface);
+    --lm-surface-raised: var(--l-raised);
+    --lm-surface-sunken: var(--l-sunken);
+    --lm-overlay: var(--l-overlay);
+    --lm-border: var(--l-border);
+    --lm-border-strong: var(--l-border-strong);
 
-    --lm-text: #10141a;
-    --lm-text-muted: #4c5563;
-    --lm-text-faint: #6f7a89;
+    --lm-text: var(--l-text);
+    --lm-text-muted: var(--l-muted);
+    --lm-text-faint: var(--l-faint);
 
-    --lm-accent: #1e5fd0;
-    --lm-accent-contrast: #ffffff;
-    --lm-ok: #157f3d;
-    --lm-warn: #8a5a00;
-    --lm-danger: #b42318;
+    --lm-accent: var(--l-accent);
+    --lm-accent-hover: var(--l-accent-hover);
+    --lm-accent-active: var(--l-accent-active);
+    --lm-accent-contrast: var(--l-accent-contrast);
+    --lm-accent-soft: var(--l-accent-soft);
+
+    --lm-ok: var(--l-ok);
+    --lm-ok-soft: var(--l-ok-soft);
+    --lm-warn: var(--l-warn);
+    --lm-warn-soft: var(--l-warn-soft);
+    --lm-danger: var(--l-danger);
+    --lm-danger-soft: var(--l-danger-soft);
+    --lm-info: var(--l-info);
+    --lm-info-soft: var(--l-info-soft);
+    --lm-neutral: var(--l-muted);
+    --lm-neutral-soft: var(--l-neutral-soft);
+
+    --lm-shadow: var(--l-shadow);
   }
 }
 
-/* Expose the tokens to Tailwind v4's utility generator, so `bg-surface` and
- * `text-muted` resolve to the same values as var(--lm-…). */
+/* The explicit override, written to <html data-theme> by the theme store. Same assignments as the
+ * media query above; the VALUES live once, in section 2, which is what keeps the themes in step. */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --lm-bg: var(--l-bg);
+  --lm-surface: var(--l-surface);
+  --lm-surface-raised: var(--l-raised);
+  --lm-surface-sunken: var(--l-sunken);
+  --lm-overlay: var(--l-overlay);
+  --lm-border: var(--l-border);
+  --lm-border-strong: var(--l-border-strong);
+
+  --lm-text: var(--l-text);
+  --lm-text-muted: var(--l-muted);
+  --lm-text-faint: var(--l-faint);
+
+  --lm-accent: var(--l-accent);
+  --lm-accent-hover: var(--l-accent-hover);
+  --lm-accent-active: var(--l-accent-active);
+  --lm-accent-contrast: var(--l-accent-contrast);
+  --lm-accent-soft: var(--l-accent-soft);
+
+  --lm-ok: var(--l-ok);
+  --lm-ok-soft: var(--l-ok-soft);
+  --lm-warn: var(--l-warn);
+  --lm-warn-soft: var(--l-warn-soft);
+  --lm-danger: var(--l-danger);
+  --lm-danger-soft: var(--l-danger-soft);
+  --lm-info: var(--l-info);
+  --lm-info-soft: var(--l-info-soft);
+  --lm-neutral: var(--l-muted);
+  --lm-neutral-soft: var(--l-neutral-soft);
+
+  --lm-shadow: var(--l-shadow);
+}
+
+/* Non-color tokens: identical in both themes, so they are declared once. */
+:root {
+  --lm-font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* JetBrains Mono is reserved for TECHNICAL VALUES — ports, hashes, byte counts, argv, flags,
+   * durations, log lines, GGUF keys — which is what makes a table of them scannable. */
+  --lm-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+
+  --lm-radius-sm: 0.25rem;
+  --lm-radius: 0.375rem;
+  --lm-radius-lg: 0.5rem;
+  --lm-radius-xl: 0.75rem;
+  --lm-radius-full: 9999px;
+
+  /* Stacking order, so nothing has to guess a z-index. */
+  --lm-z-sticky: 10;
+  --lm-z-header: 20;
+  --lm-z-dropdown: 40;
+  --lm-z-overlay: 50;
+  --lm-z-dialog: 60;
+  --lm-z-toast: 70;
+  --lm-z-tooltip: 80;
+
+  --lm-duration-fast: 100ms;
+  --lm-duration: 160ms;
+  --lm-duration-slow: 240ms;
+
+  /* Chart series (D44, uPlot). Six hues that stay distinguishable in both themes and do not
+   * collide with the semantic four above. */
+  --lm-chart-1: #5b9dff;
+  --lm-chart-2: #3ecf8e;
+  --lm-chart-3: #f5b93a;
+  --lm-chart-4: #c792ea;
+  --lm-chart-5: #4dd0e1;
+  --lm-chart-6: #ff8f6b;
+}
+
+/* -- 4. Tailwind bindings -------------------------------------------------- */
+
 @theme inline {
   --color-bg: var(--lm-bg);
   --color-surface: var(--lm-surface);
-  --color-surface-raised: var(--lm-surface-raised);
-  --color-border: var(--lm-border);
-  --color-border-strong: var(--lm-border-strong);
+  --color-raised: var(--lm-surface-raised);
+  --color-sunken: var(--lm-surface-sunken);
+  --color-overlay: var(--lm-overlay);
+  --color-line: var(--lm-border);
+  --color-line-strong: var(--lm-border-strong);
+
   --color-text: var(--lm-text);
   --color-muted: var(--lm-text-muted);
   --color-faint: var(--lm-text-faint);
+
   --color-accent: var(--lm-accent);
+  --color-accent-hover: var(--lm-accent-hover);
+  --color-accent-active: var(--lm-accent-active);
   --color-accent-contrast: var(--lm-accent-contrast);
+  --color-accent-soft: var(--lm-accent-soft);
+
   --color-ok: var(--lm-ok);
+  --color-ok-soft: var(--lm-ok-soft);
   --color-warn: var(--lm-warn);
+  --color-warn-soft: var(--lm-warn-soft);
   --color-danger: var(--lm-danger);
+  --color-danger-soft: var(--lm-danger-soft);
+  --color-info: var(--lm-info);
+  --color-info-soft: var(--lm-info-soft);
+  --color-neutral: var(--lm-neutral);
+  --color-neutral-soft: var(--lm-neutral-soft);
+
+  --color-chart-1: var(--lm-chart-1);
+  --color-chart-2: var(--lm-chart-2);
+  --color-chart-3: var(--lm-chart-3);
+  --color-chart-4: var(--lm-chart-4);
+  --color-chart-5: var(--lm-chart-5);
+  --color-chart-6: var(--lm-chart-6);
+
+  --font-sans: var(--lm-font-sans);
+  --font-mono: var(--lm-font-mono);
+
+  --radius-sm: var(--lm-radius-sm);
+  --radius-DEFAULT: var(--lm-radius);
+  --radius-lg: var(--lm-radius-lg);
+  --radius-xl: var(--lm-radius-xl);
+
+  --shadow-panel: var(--lm-shadow);
 }
+
+/* -- 5. Base -------------------------------------------------------------- */
 
 html,
 body,
@@ -87,13 +344,30 @@ body {
   margin: 0;
   background: var(--lm-bg);
   color: var(--lm-text);
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--lm-font-sans);
+  font-size: 0.875rem;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tabular figures everywhere numbers are compared down a column. */
+.lm-numeric {
+  font-family: var(--lm-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
 }
 
 :focus-visible {
   outline: 2px solid var(--lm-focus);
   outline-offset: 2px;
+  border-radius: var(--lm-radius-sm);
+}
+
+/* Scrollbars that belong to the theme rather than to the browser's default light chrome. */
+* {
+  scrollbar-color: var(--lm-border-strong) transparent;
+  scrollbar-width: thin;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -103,5 +377,6 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

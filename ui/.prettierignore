@@ -1,3 +1,13 @@
 dist
 node_modules
 package-lock.json
+public/fonts
+
+# Generated from api/openapi.json by `npm run gen:api`; formatting it would put the drift check and
+# `prettier --check` in a fight neither can win.
+src/api/schema.d.ts
+
+# Playwright run artifacts: traces, error contexts and the saved session.
+e2e/.output
+e2e/.auth
+playwright-report

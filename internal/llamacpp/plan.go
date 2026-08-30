@@ -72,10 +72,23 @@ type Plan struct {
 	// its own preflight rather than guess.
 	CUDAArch []string `json:"cuda_arch"`
 	// FreeSpaceOK is the `space` phase's check, evaluated now: 12 GiB for CUDA,
-	// 3 GiB for CPU (internal/toolchain owns both numbers).
+	// 3 GiB for CPU (internal/toolchain owns both numbers). It is false when the
+	// measurement could not be made at all, so read FreeSpaceKnown beside it.
 	FreeSpaceOK bool `json:"free_space_ok"`
+	// FreeSpaceKnown reports whether the statfs behind FreeBytes actually ran.
+	//
+	// It exists because the alternative is a lie the UI cannot see through. A
+	// probe that FAILED — the versions directory absent on a host whose units
+	// were never installed, a filesystem that refuses statfs — left FreeBytes at
+	// its zero value, and a plan reading "Free space 0 B of 3.00 GiB needed /
+	// Cannot proceed" is indistinguishable from a genuinely full disk. The user
+	// is then told to free space they already have, and the wizard's one
+	// non-skippable step stays disabled. An unmeasurable probe is `unknown`, and
+	// unknown does not refuse.
+	FreeSpaceKnown bool `json:"free_space_known"`
 	// FreeBytes and RequiredBytes are the numbers behind that boolean, because
 	// "not enough space" without them is not something a user can act on.
+	// FreeBytes is meaningless unless FreeSpaceKnown.
 	FreeBytes     int64 `json:"free_bytes"`
 	RequiredBytes int64 `json:"required_bytes"`
 	// CanProceed folds the three checks: nothing missing, enough room, and — on
@@ -143,15 +156,22 @@ func (s *Service) PlanInstall(ctx context.Context, req PlanRequest) (Plan, error
 	out.RequiredBytes = toolchain.RequiredFreeBytes(ident.Backend)
 	free, err := s.freeSpace(s.layout.VersionsRoot())
 	if err == nil {
+		out.FreeSpaceKnown = true
 		out.FreeBytes = int64(free)
 		out.FreeSpaceOK = int64(free) >= out.RequiredBytes
 	} else {
-		// A statfs that could not run is reported as "unknown", not as "fine":
-		// this endpoint exists to stop a build that was going to fail.
-		s.log.Warn("could not measure free space for the plan", "error", err)
+		// A statfs that could not run is reported as UNKNOWN, not as "fine" and
+		// not as "full". This endpoint exists to stop a build that was going to
+		// fail, and a build that would have succeeded is not one of those: the
+		// pipeline's own `space` phase measures again at the moment it matters,
+		// on a directory it has just created, and it is the one place a genuine
+		// shortage should refuse.
+		s.log.Warn("could not measure free space for the plan",
+			"path", s.layout.VersionsRoot(), "error", err)
 	}
 
-	out.CanProceed = len(out.MissingTools) == 0 && out.FreeSpaceOK
+	// An unknown measurement does not block. See FreeSpaceKnown.
+	out.CanProceed = len(out.MissingTools) == 0 && (out.FreeSpaceOK || !out.FreeSpaceKnown)
 	if out.CanProceed && out.Acquisition == model.AcquisitionSource &&
 		ident.Backend == model.BackendCUDA && len(out.CUDAArch) == 0 &&
 		ident.CUDAArchList == "" {

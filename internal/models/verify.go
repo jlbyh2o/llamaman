@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/hf/cache"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/model"
@@ -127,7 +128,8 @@ func (w *VerifyWorker) runFor(ctx context.Context, id string) (jobs.Outcome, err
 		verdict = model.ModelMissing
 	}
 
-	return jobs.Succeeded(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
+	sink := &events.Sink{}
+	out := jobs.Succeeded(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
 		now := s.now().UnixMilli()
 		for i, f := range files {
 			f.State = results[i].state
@@ -165,10 +167,12 @@ func (w *VerifyWorker) runFor(ctx context.Context, id string) (jobs.Outcome, err
 				Level: levelFor(verdict), Category: model.CategoryModel, Actor: model.ActorAdmin,
 				Action: "model_verified", SubjectID: &id, FromState: &from, ToState: &to,
 				Message: "verified " + m.RepoID + " " + m.PrimaryFile,
-			})
+			}, sink)
 		}
 		return nil
-	}), nil
+	})
+	out.AfterCommit = func() { s.publish(sink) }
+	return out, nil
 }
 
 type fileVerdict struct {

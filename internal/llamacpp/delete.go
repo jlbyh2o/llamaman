@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/llamacpp/prebuilt"
 	"github.com/jlbyh2o/llamaman/internal/model"
@@ -138,15 +139,18 @@ func (w *DeleteWorker) Run(ctx context.Context, t *jobs.Task) (jobs.Outcome, err
 	// describes.
 	_ = prebuilt.CleanStaging(w.svc.layout.StagingDir(p.VersionID))
 
-	return jobs.Succeeded(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
+	sink := &events.Sink{}
+	out := jobs.Succeeded(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
 		if _, err := w.svc.store.SetLlamacppVersionState(ctx, tx, p.VersionID,
 			model.VersionDeleted, now.UnixMilli()); err != nil {
 			return err
 		}
 		return w.svc.event(ctx, tx, now, p.VersionID, "llamacpp_version_deleted",
 			model.LevelInfo, fmt.Sprintf("llama.cpp %s was deleted", p.VersionID),
-			ptr(string(model.VersionDeleting)), ptr(string(model.VersionDeleted)))
-	}), nil
+			ptr(string(model.VersionDeleting)), ptr(string(model.VersionDeleted)), sink)
+	})
+	out.AfterCommit = func() { w.svc.publish(sink) }
+	return out, nil
 }
 
 // refused closes the job `failed` and puts the version back where it was. It is
@@ -155,7 +159,8 @@ func (w *DeleteWorker) Run(ctx context.Context, t *jobs.Task) (jobs.Outcome, err
 // the job row.
 func (w *DeleteWorker) refused(id string, code model.ErrorCode, message string) jobs.Outcome {
 	now := w.svc.now()
-	return jobs.Failed(string(code), message, func(ctx context.Context, tx store.Tx,
+	sink := &events.Sink{}
+	out := jobs.Failed(string(code), message, func(ctx context.Context, tx store.Tx,
 		_ model.JobState) error {
 
 		if _, err := w.svc.store.SetLlamacppVersionState(ctx, tx, id,
@@ -164,8 +169,10 @@ func (w *DeleteWorker) refused(id string, code model.ErrorCode, message string) 
 		}
 		return w.svc.event(ctx, tx, now, id, "llamacpp_version_delete_refused",
 			model.LevelWarn, message, ptr(string(model.VersionDeleting)),
-			ptr(string(model.VersionReady)))
+			ptr(string(model.VersionReady)), sink)
 	})
+	out.AfterCommit = func() { w.svc.publish(sink) }
+	return out
 }
 
 // removalFailed is §2.5's second and third edges out of `deleting`, decided by
@@ -173,14 +180,17 @@ func (w *DeleteWorker) refused(id string, code model.ErrorCode, message string) 
 func (w *DeleteWorker) removalFailed(id string, cause error) jobs.Outcome {
 	now := w.svc.now()
 	message := fmt.Sprintf("could not remove %s: %v", id, cause)
-	return jobs.Failed(string(model.CodeDeleteIncomplete), message,
+	sink := &events.Sink{}
+	out := jobs.Failed(string(model.CodeDeleteIncomplete), message,
 		func(ctx context.Context, tx store.Tx, _ model.JobState) error {
 			if err := w.resolveAfterFailure(ctx, tx, id, now.UnixMilli()); err != nil {
 				return err
 			}
 			return w.svc.event(ctx, tx, now, id, "llamacpp_version_delete_failed",
-				model.LevelError, message, ptr(string(model.VersionDeleting)), nil)
+				model.LevelError, message, ptr(string(model.VersionDeleting)), nil, sink)
 		})
+	out.AfterCommit = func() { w.svc.publish(sink) }
+	return out
 }
 
 // resolveAfterFailure walks §2.5's two edges: a tree that still carries an

@@ -81,6 +81,12 @@ type Options struct {
 
 	// Logger defaults to slog.Default.
 	Logger *slog.Logger
+
+	// Publisher is the `jobs` SSE topic (section 3.14, publish.go). Nil
+	// publishes nothing, which is the right behavior for a queue in a test and
+	// the wrong one in a daemon: without it every screen that narrates work is
+	// stale until reloaded.
+	Publisher Publisher
 }
 
 // Queue is the job engine: one per daemon, constructed by the composition root
@@ -97,6 +103,9 @@ type Queue struct {
 	heartbeatEvery time.Duration
 	pollEvery      time.Duration
 	concurrency    int
+
+	// publisher is the `jobs` SSE topic. See publish.go.
+	publisher Publisher
 
 	// wake carries at most one pending "there is new work" signal, so an Enqueue
 	// does not wait out a poll interval. Losing one is harmless: the runners poll.
@@ -124,6 +133,7 @@ func New(s *store.Store, opts Options) (*Queue, error) {
 		heartbeatEvery: opts.HeartbeatEvery,
 		pollEvery:      opts.PollEvery,
 		concurrency:    opts.Concurrency,
+		publisher:      opts.Publisher,
 		wake:           make(chan struct{}, 1),
 	}
 	if q.log == nil {

@@ -99,6 +99,10 @@ func (q *Queue) Enqueue(ctx context.Context, p EnqueueParams) (EnqueueResult, er
 		return EnqueueResult{}, err
 	}
 	if !res.Replayed {
+		// A replay names a job that already exists and whose state has not
+		// moved, so there is nothing new to say about it — publishing anyway
+		// would make a double-clicked button look like two pieces of work.
+		q.notify(ctx, res.Job.ID)
 		q.Wake()
 	}
 	return res, nil

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/store"
 )
@@ -43,6 +44,10 @@ type Store interface {
 	SetInstanceDesiredState(ctx context.Context, tx store.Tx, id string, desired model.DesiredState, at int64) (bool, error)
 	StampPendingStart(ctx context.Context, tx store.Tx, id string, trigger model.PendingTrigger, overrideJSON *string, at int64) (bool, error)
 	SetInstanceConfigHash(ctx context.Context, tx store.Tx, id, hash string, at int64) (bool, error)
+	// SetInstanceAutostart is `PUT /instances/{id}/autostart`'s one column. It
+	// is separate from UpdateInstanceConfig because autostart is deliberately
+	// not part of the config PATCH and is not a `config_hash` input.
+	SetInstanceAutostart(ctx context.Context, tx store.Tx, id string, on bool, at int64) (bool, error)
 	SoftDeleteInstance(ctx context.Context, tx store.Tx, id string, at int64) (bool, error)
 	PurgeInstance(ctx context.Context, tx store.Tx, id string) (bool, error)
 	DeleteTokenInstances(ctx context.Context, tx store.Tx, instanceID string) error
@@ -329,6 +334,7 @@ type CreateParams struct {
 func (s *Service) Create(ctx context.Context, p CreateParams) (View, error) {
 	now := s.now()
 	nowMS := now.UnixMilli()
+	var sink events.Sink
 
 	if err := ValidateName(p.Name); err != nil {
 		return View{}, err
@@ -422,7 +428,8 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (View, error) {
 			return err
 		}
 		if err := s.event(ctx, tx, now, inst, "instance_created", model.LevelInfo,
-			fmt.Sprintf("instance %s created", inst.Name), nil, ptrTo(string(model.InstanceUnknown))); err != nil {
+			fmt.Sprintf("instance %s created", inst.Name), nil, ptrTo(string(model.InstanceUnknown)),
+			&sink); err != nil {
 			return err
 		}
 
@@ -439,7 +446,7 @@ func (s *Service) Create(ctx context.Context, p CreateParams) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	s.publish(out.Instance, "instance_created", now)
+	s.publish(&sink)
 	return out, nil
 }
 
@@ -491,7 +498,10 @@ func (s *Service) Patch(ctx context.Context, id string, p PatchParams) (View, er
 	now := s.now()
 	nowMS := now.UnixMilli()
 
-	var out View
+	var (
+		out  View
+		sink events.Sink
+	)
 	err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		inst, err := s.store.Instance(ctx, tx, id)
 		if err != nil {
@@ -649,7 +659,7 @@ func (s *Service) Patch(ctx context.Context, id string, p PatchParams) (View, er
 			return conflictGeneration(current.Generation, p.Generation)
 		}
 		if err := s.event(ctx, tx, now, inst, "instance_updated", model.LevelInfo,
-			fmt.Sprintf("instance %s updated", inst.Name), nil, nil); err != nil {
+			fmt.Sprintf("instance %s updated", inst.Name), nil, nil, &sink); err != nil {
 			return err
 		}
 
@@ -666,7 +676,7 @@ func (s *Service) Patch(ctx context.Context, id string, p PatchParams) (View, er
 	if err != nil {
 		return View{}, err
 	}
-	s.publish(out.Instance, "instance_updated", now)
+	s.publish(&sink)
 	return out, nil
 }
 
@@ -703,6 +713,7 @@ type DeleteResult struct {
 func (s *Service) Delete(ctx context.Context, id string, p DeleteParams) (DeleteResult, error) {
 	now := s.now()
 	nowMS := now.UnixMilli()
+	var sink events.Sink
 
 	var (
 		inst   model.Instance
@@ -748,7 +759,8 @@ func (s *Service) Delete(ctx context.Context, id string, p DeleteParams) (Delete
 			// purge is the one operation whose subject cannot be looked up
 			// afterwards.
 			return s.event(ctx, tx, now, inst, "instance_purged", model.LevelWarn,
-				fmt.Sprintf("instance %s purged with all of its history", inst.Name), nil, nil)
+				fmt.Sprintf("instance %s purged with all of its history", inst.Name), nil, nil,
+				&sink)
 		}
 
 		if _, err := s.store.SetInstanceDesiredState(ctx, tx, id, model.DesiredStopped, nowMS); err != nil {
@@ -764,17 +776,13 @@ func (s *Service) Delete(ctx context.Context, id string, p DeleteParams) (Delete
 		}
 		return s.event(ctx, tx, now, inst, "instance_deleted", model.LevelInfo,
 			fmt.Sprintf("instance %s deleted; its history and accounting are kept", inst.Name),
-			nil, nil)
+			nil, nil, &sink)
 	})
 	if err != nil {
 		return DeleteResult{}, err
 	}
 
-	action := "instance_deleted"
-	if result.Purged {
-		action = "instance_purged"
-	}
-	s.publish(inst, action, now)
+	s.publish(&sink)
 	return result, nil
 }
 
@@ -805,7 +813,10 @@ func (s *Service) SetDesiredState(ctx context.Context, id string,
 		}
 	}
 
-	var out View
+	var (
+		out  View
+		sink events.Sink
+	)
 	err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		inst, err := s.store.Instance(ctx, tx, id)
 		if err != nil {
@@ -828,7 +839,7 @@ func (s *Service) SetDesiredState(ctx context.Context, id string,
 		to := string(desired)
 		if err := s.event(ctx, tx, now, inst, "instance_desired_state", model.LevelInfo,
 			fmt.Sprintf("instance %s is wanted %s", inst.Name, desired),
-			ptrTo(string(inst.DesiredState)), &to); err != nil {
+			ptrTo(string(inst.DesiredState)), &to, &sink); err != nil {
 			return err
 		}
 
@@ -842,7 +853,7 @@ func (s *Service) SetDesiredState(ctx context.Context, id string,
 	if err != nil {
 		return View{}, err
 	}
-	s.publish(out.Instance, "instance_desired_state", now)
+	s.publish(&sink)
 	return out, nil
 }
 
@@ -1167,23 +1178,39 @@ func flagWarnings(flags model.FlagSet, active Runtime, unknown []string) []model
 	return out
 }
 
-// event appends one `events` row inside the caller's transaction.
+// event appends one `events` row inside the caller's transaction and remembers
+// it in sink, so publish can fan out that exact row once the write commits.
 func (s *Service) event(ctx context.Context, tx store.Tx, now time.Time, inst model.Instance,
-	action string, level model.EventLevel, message string, from, to *string) error {
+	action string, level model.EventLevel, message string, from, to *string,
+	sink *events.Sink) error {
 	if s.events == nil {
 		return nil
 	}
-	return s.events.Append(ctx, tx, s.newEvent(now, inst, action, level, message, from, to))
+	ev := s.newEvent(now, inst, action, level, message, from, to)
+	if err := s.events.Append(ctx, tx, ev); err != nil {
+		return err
+	}
+	sink.Add(ev)
+	return nil
 }
 
-// publish fans the frame out AFTER the transaction has committed. A subscriber
-// told about a row that then rolled back would have been told something that
-// did not happen.
-func (s *Service) publish(inst model.Instance, action string, now time.Time) {
+// publish fans the collected rows out AFTER the transaction has committed. A
+// subscriber told about a row that then rolled back would have been told
+// something that did not happen.
+//
+// It publishes the rows themselves rather than re-deriving them. A frame minted
+// beside the row it describes wears a different ULID, an empty message and no
+// from/to, so internal/sse's Last-Event-ID dedup (which compares live ids
+// against the ids it replayed out of the table) can never match it, and a
+// reconnecting client shows the transition twice — the second time under an id
+// `GET /events/log` will never return.
+func (s *Service) publish(sink *events.Sink) {
 	if s.events == nil {
 		return
 	}
-	s.events.Publish(s.newEvent(now, inst, action, model.LevelInfo, "", nil, nil))
+	for _, ev := range sink.Drain() {
+		s.events.Publish(ev)
+	}
 }
 
 func (s *Service) newEvent(now time.Time, inst model.Instance, action string,

@@ -102,8 +102,11 @@ func Serve(env Env, args []string) error {
 // create NOTHING under the state directory, while reset-password is deliberately
 // outside that rule because its whole purpose is to write.
 
-// Diagnostics writes a redacted support bundle to --out (D50).
-func Diagnostics(env Env, args []string) error { return stub(env, "diagnostics") }
+// Diagnostics lives in diagnostics.go: a redacted support bundle written to
+// --out (D50) — doctor output, a sanitized settings dump, recent journal
+// excerpts, unit render and drift status, the schema version and per-table
+// row counts, job and instance state summaries, and a versions manifest.
+// Never the database, never a plaintext secret.
 
 // RestoreDB lives in restoredb.go: the explicit, offline database restore of
 // DESIGN section 12.4 — step 3 of a five-command procedure, never run by itself,

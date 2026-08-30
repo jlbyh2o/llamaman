@@ -137,6 +137,36 @@ const (
 	// could not write there whatever the file mode says, and registration is
 	// the honest moment to say so rather than the first download.
 	CodeRootPathProtected ErrorCode = "root_path_protected"
+
+	// The degraded-mode refusals of §11.1a. Every one of them names a thing
+	// this host cannot do rather than a thing the request got wrong, and each
+	// carries the exact manual command in `details.hints` — which is the whole
+	// point: F9 and F10 are supported modes this daemon serves in, so the API's
+	// job is to say so precisely enough that the user can finish the job by
+	// hand.
+
+	// CodeSystemdUnavailable is the 409 every instance control answers in the
+	// F10 mode: no service manager is reachable, so there is nothing to ask.
+	CodeSystemdUnavailable ErrorCode = "systemd_unavailable"
+	// CodeSystemdDenied is the 409 for a call the name-scoped `manage-units`
+	// polkit grant was refused for (F9, §5.2 branch (b)).
+	CodeSystemdDenied ErrorCode = "systemd_denied"
+	// CodeAutostartUnavailable is §3.10's 409 on `PUT /instances/{id}/autostart`
+	// when the `manage-unit-files` grant was withheld — a narrower refusal than
+	// CodeSystemdDenied, because starting and stopping still work.
+	CodeAutostartUnavailable ErrorCode = "autostart_unavailable"
+	// CodeRestartUnavailable is §3.3's 409 on `POST /system/restart` when
+	// `systemd_control='unavailable'`; the response carries
+	// `sudo systemctl restart llamaman.service`.
+	CodeRestartUnavailable ErrorCode = "restart_unavailable"
+	// CodeRestartRateLimited is D93's 429 — the ONE meaning §3 gives 429 outside
+	// the login lockout — while this boot has not yet cleared its unit's
+	// start-limit counter.
+	CodeRestartRateLimited ErrorCode = "restart_rate_limited"
+	// CodeJournalUnavailable is D77's 409 on `GET /system/journal` when
+	// `runtime_info.journal_read != 'ok'`: an empty stream and a denied one must
+	// not look alike.
+	CodeJournalUnavailable ErrorCode = "journal_unavailable"
 )
 
 // WarningCode is the machine-readable code of an entry in a response's

@@ -186,6 +186,27 @@ func (d *daemon) serve(ctx context.Context) error {
 		}
 		return swapErr
 
+	case <-d.restart:
+		// Section 3.3's `POST /system/restart`, in section 9.4's order. The 202
+		// was flushed by the handler before it signalled, which is what makes
+		// the drain safe to begin here: the caller already has its answer.
+		//
+		// The ticker stops first, for the same reason the swap path stops it:
+		// between the drain and the manager taking over there must be no tick.
+		stopTicker()
+		restartErr := d.runRestart(ctx, errc)
+		stopGateway()
+		select {
+		case <-gatewayDone:
+		case <-time.After(gatewayStopGrace):
+		}
+		stopSupervisor()
+		select {
+		case <-supervisorDone:
+		case <-time.After(supervisorStopGrace):
+		}
+		return restartErr
+
 	case <-ctx.Done():
 	}
 

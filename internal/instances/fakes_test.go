@@ -172,6 +172,16 @@ func (f *fakeStore) SetInstanceConfigHash(_ context.Context, _ store.Tx, id, has
 	return true, nil
 }
 
+func (f *fakeStore) SetInstanceAutostart(_ context.Context, _ store.Tx, id string, on bool, at int64) (bool, error) {
+	i, ok := f.instances[id]
+	if !ok || i.Deleted() {
+		return false, nil
+	}
+	i.Autostart, i.UpdatedAt = on, at
+	f.instances[id] = i
+	return true, nil
+}
+
 func (f *fakeStore) SoftDeleteInstance(_ context.Context, _ store.Tx, id string, at int64) (bool, error) {
 	i, ok := f.instances[id]
 	if !ok || i.Deleted() {

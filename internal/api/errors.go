@@ -241,6 +241,26 @@ func statusForCode(c model.ErrorCode) int {
 		// The body parsed and what it named is the problem, which is what 422
 		// means throughout this API.
 		return http.StatusUnprocessableEntity
+	case model.CodeSystemdUnavailable,
+		model.CodeSystemdDenied,
+		model.CodeAutostartUnavailable,
+		model.CodeRestartUnavailable:
+		// Section 11.1a's degraded modes. Each describes a request that is well
+		// formed and currently impossible on THIS host, and each carries the
+		// exact manual command in `details.hints` — which is what 409 means
+		// throughout this API, and why F9 and F10 are modes the daemon serves in
+		// rather than refuses to start in.
+		return http.StatusConflict
+	case model.CodeJournalUnavailable:
+		// D77: an empty stream and a denied one must not look alike. 409 rather
+		// than 403, because the identity the daemon runs as is a host fact the
+		// user can change, and the response names the group to add.
+		return http.StatusConflict
+	case model.CodeRestartRateLimited:
+		// D93, and the ONE thing section 3 gives 429 outside the login lockout.
+		// It carries `retry_after_ms`, and the UI disables the button for that
+		// long rather than spending a start the revert deadline needs.
+		return http.StatusTooManyRequests
 	case model.CodeRootNotWritable, model.CodeRootPathProtected:
 		// A path this host will not accept as a writable cache root. 422 rather
 		// than 400 for the same reason section 3.10's save-time refusals are:

@@ -19,8 +19,8 @@
 //     and what the settings screen renders.
 //
 // Nothing in this package logs a token, and no error message here contains one:
-// §2.2's rule and CLAUDE.md's are the same rule, and an error string is the one
-// part of a response that reliably ends up in a journal.
+// §2.2's rule is absolute here, and an error string is the one part of a
+// response that reliably ends up in a journal.
 package secrets
 
 import (

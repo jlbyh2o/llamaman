@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/hf/cache"
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/store"
@@ -89,6 +90,7 @@ func (s *Service) AddRoot(ctx context.Context, path string) (RootView, JobRef, e
 	var (
 		view RootView
 		ref  JobRef
+		sink events.Sink
 	)
 	err = s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		if existing, err := s.store.CacheRootByPath(ctx, tx, info.Path); err == nil {
@@ -114,7 +116,7 @@ func (s *Service) AddRoot(ctx context.Context, path string) (RootView, JobRef, e
 		if err := s.appendEvent(ctx, tx, model.Event{
 			Level: model.LevelInfo, Category: model.CategoryModel, Actor: model.ActorAdmin,
 			Action: "cache_root_added", Message: "registered cache root " + row.Path,
-		}); err != nil {
+		}, &sink); err != nil {
 			return err
 		}
 
@@ -128,7 +130,11 @@ func (s *Service) AddRoot(ctx context.Context, path string) (RootView, JobRef, e
 		}
 		return nil
 	})
-	return view, ref, err
+	if err != nil {
+		return RootView{}, JobRef{}, err
+	}
+	s.publish(&sink)
+	return view, ref, nil
 }
 
 // SetPrimaryRoot is §7.2a's single writer of all four representations.
@@ -162,6 +168,7 @@ func (s *Service) SetPrimaryRoot(ctx context.Context, hubDir string,
 	var (
 		view RootView
 		ref  JobRef
+		sink events.Sink
 	)
 	err = s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		now := s.now()
@@ -199,7 +206,7 @@ func (s *Service) SetPrimaryRoot(ctx context.Context, hubDir string,
 		if err := s.appendEvent(ctx, tx, model.Event{
 			Level: model.LevelInfo, Category: model.CategoryModel, Actor: model.ActorAdmin,
 			Action: "cache_root_promoted", Message: "the primary cache root is now " + row.Path,
-		}); err != nil {
+		}, &sink); err != nil {
 			return err
 		}
 		if ref, err = s.enqueueScan(ctx, tx, row.ID, model.ScanTriggerManual); err != nil {
@@ -222,8 +229,7 @@ func (s *Service) SetPrimaryRoot(ctx context.Context, hubDir string,
 	if s.settings != nil {
 		s.settings.Invalidate(KeyHubDir, KeyHFHome)
 	}
-	s.publish(model.Event{Level: model.LevelInfo, Category: model.CategoryModel,
-		Actor: model.ActorAdmin, Action: "cache_root_promoted"})
+	s.publish(&sink)
 	return view, ref, nil
 }
 
@@ -264,6 +270,7 @@ func (s *Service) PromoteRoot(ctx context.Context, id string) (RootView, JobRef,
 // fail inside SQLite with a raw foreign-key violation instead of the documented
 // 409 — which is exactly the bug this reading exists to prevent.
 func (s *Service) DetachRoot(ctx context.Context, id string) error {
+	var sink events.Sink
 	err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		r, err := s.store.CacheRoot(ctx, tx, id)
 		if err != nil {
@@ -299,11 +306,10 @@ func (s *Service) DetachRoot(ctx context.Context, id string) error {
 			Action: "cache_root_detached",
 			Message: "detached cache root " + r.Path +
 				" — its catalog rows were removed and no file was touched",
-		})
+		}, &sink)
 	})
 	if err == nil {
-		s.publish(model.Event{Level: model.LevelInfo, Category: model.CategoryModel,
-			Actor: model.ActorAdmin, Action: "cache_root_detached"})
+		s.publish(&sink)
 	}
 	return err
 }

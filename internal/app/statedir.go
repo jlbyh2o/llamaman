@@ -237,15 +237,43 @@ func lockHolder(f *os.File) int {
 	return pid
 }
 
-// ensureStateDir creates the state directory if it is absent, with the 0750
-// mode section 2 specifies for the directory that holds a 0600 database.
+// StateDirChildren is section 6.1's layout under the state directory, and it is
+// the same list `install.sh` creates as LM_STATE_CHILDREN.
 //
-// The units guarantee the directory exists (StateDirectory=llamaman), so this
-// is for the hand-run case and for a first boot on a host whose units have not
-// been installed yet.
+// The two must agree, and the reason they have to BOTH exist is that only one of
+// them runs on any given host: the installer creates them at install time, and
+// this list creates them for the hand-run case and for a first boot on a host
+// whose units have not been installed yet — which is precisely what
+// ensureStateDir's own comment already claimed to cover.
+//
+// It did not, and the gap was not cosmetic. `GET /api/v1/llamacpp/plan` statfs's
+// `<state_dir>/versions` to answer "is there room to install", so on a host the
+// installer had not touched the probe failed with ENOENT, the plan rendered
+// `free_bytes: 0` / `can_proceed: false`, and the wizard disabled the one button
+// that finishes setup. Creating the directory the daemon is about to write into
+// is the fix; reporting an unmeasurable probe honestly (see internal/llamacpp's
+// PlanReport.FreeSpaceKnown) is the other half.
+var StateDirChildren = []string{
+	"versions", "src", "build", "logs", "db-backups", "update", "tmp",
+}
+
+// ensureStateDir creates the state directory and section 6.1's children if they
+// are absent, with the 0750 mode section 2 specifies for the directory that
+// holds a 0600 database.
+//
+// A child that cannot be created is NOT fatal. The units guarantee the parent
+// exists (StateDirectory=llamaman), and a daemon that refused to start because
+// it could not pre-create `db-backups/` would turn a cosmetic problem into an
+// outage; the subsystem that needs a directory creates it again at the moment it
+// writes, and reports its own failure with the context to act on.
 func ensureStateDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create state directory %s: %w", dir, err)
+	}
+	for _, child := range StateDirChildren {
+		if err := os.MkdirAll(filepath.Join(dir, child), 0o750); err != nil {
+			return fmt.Errorf("create %s: %w", filepath.Join(dir, child), err)
+		}
 	}
 	return nil
 }

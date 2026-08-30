@@ -80,7 +80,12 @@ func (d *daemon) buildLlamacpp() error {
 		// wired into this daemon yet, so a failed canary is reported through
 		// `events` alone, which is a fact about THIS build rather than an
 		// assumption about every host.
-		Bench:  d.bench,
+		Bench: d.bench,
+		// Section 11.2's `llamacpp` step, which the activation closes. It is the
+		// wizard's one non-skippable step after the password, and nothing marked
+		// it — so a host that had installed and activated a build still had every
+		// step behind it blocked and `POST /setup/complete` refusing forever.
+		Wizard: d.setup,
 		Now:    d.opts.Now,
 		Logger: d.log,
 	})

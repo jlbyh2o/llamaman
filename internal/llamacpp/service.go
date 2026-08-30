@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/instances"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/llamacpp/github"
@@ -87,6 +88,15 @@ type Queue interface {
 	Cancel(ctx context.Context, id string) (model.Job, error)
 	Retry(ctx context.Context, id string) (model.Job, error)
 	Wake()
+}
+
+// WizardSteps is the one method this package needs from the setup wizard:
+// record that a step finished. *setup.Service satisfies it, and the interface is
+// declared here because the consumer owns it (DESIGN §1) — importing
+// internal/setup for one signature would couple the build pipeline to the wizard
+// in the wrong direction.
+type WizardSteps interface {
+	MarkStep(ctx context.Context, step model.WizardStep) error
 }
 
 // ToolchainProber probes this host for `GET /api/v1/llamacpp/plan` (§6.3). It is
@@ -206,6 +216,14 @@ type Config struct {
 	// pipeline's own implementation, so a plan and a build agree about what
 	// "enough room" means.
 	FreeSpace func(path string) (uint64, error)
+	// Wizard is the setup wizard's step marker (§11.2). It is called after an
+	// activation commits, because "llama.cpp is installed" is the only thing
+	// that finishes the wizard's ONE non-skippable step after the password —
+	// and a step that nothing ever marks is a wizard that cannot be completed,
+	// which is what `POST /setup/complete` was refusing on. Nil marks nothing,
+	// which is correct for a binary with no wizard.
+	Wizard WizardSteps
+
 	// Bench, Notify, Releases and Refs are the four documented nils above.
 	Bench    BenchGuard
 	Notify   Notifier
@@ -251,6 +269,7 @@ type Service struct {
 	rel      Resolver
 	releases ReleaseLister
 	refs     RefResolver
+	wizard   WizardSteps
 	goarch   string
 	bootID   string
 
@@ -288,6 +307,7 @@ func New(cfg Config) (*Service, error) {
 		rel:      cfg.Releases,
 		releases: cfg.ReleaseList,
 		refs:     cfg.Refs,
+		wizard:   cfg.Wizard,
 		goarch:   cfg.GOARCH,
 		bootID:   cfg.BootID,
 		now:      cfg.Now,
@@ -464,12 +484,15 @@ func (s *Service) Install(ctx context.Context, req InstallRequest) (InstallResul
 	}
 
 	now := s.now()
-	var out InstallResult
+	var (
+		out  InstallResult
+		sink events.Sink
+	)
 	err = s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		existing, err := s.store.LlamacppVersion(ctx, tx, ident.ID)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
-			return s.installFresh(ctx, tx, ident, req, now, &out)
+			return s.installFresh(ctx, tx, ident, req, now, &out, &sink)
 		case err != nil:
 			return err
 		}
@@ -496,12 +519,13 @@ func (s *Service) Install(ctx context.Context, req InstallRequest) (InstallResul
 			// `ready` with force_rebuild, or any terminal-failure state:
 			// reuse-and-reset (D71). The prior failure survives in `events` and
 			// in the rotated build log; the row itself starts again.
-			return s.installReset(ctx, tx, ident, req, existing, now, &out)
+			return s.installReset(ctx, tx, ident, req, existing, now, &out, &sink)
 		}
 	})
 	if err != nil {
 		return InstallResult{}, err
 	}
+	s.publish(&sink)
 	if out.Job.ID != "" && !out.Replayed {
 		s.queue.Wake()
 	}
@@ -510,7 +534,7 @@ func (s *Service) Install(ctx context.Context, req InstallRequest) (InstallResul
 
 // installFresh is D71's first branch: no row with this id.
 func (s *Service) installFresh(ctx context.Context, tx store.Tx, ident identity,
-	req InstallRequest, now time.Time, out *InstallResult) error {
+	req InstallRequest, now time.Time, out *InstallResult, sink *events.Sink) error {
 
 	row := ident.row(now)
 	res, err := s.enqueueInstall(ctx, tx, ident, req, now,
@@ -520,7 +544,7 @@ func (s *Service) installFresh(ctx context.Context, tx store.Tx, ident identity,
 			}
 			return s.event(ctx, tx, now, row.ID, "llamacpp_version_created",
 				model.LevelInfo, fmt.Sprintf("llama.cpp %s was requested", row.ID), nil,
-				ptr(string(model.VersionPending)))
+				ptr(string(model.VersionPending)), sink)
 		})
 	if err != nil {
 		return err
@@ -557,7 +581,7 @@ func (s *Service) installLive(ctx context.Context, tx store.Tx, ident identity,
 // third: the row returns to `pending` and a fresh job is enqueued.
 func (s *Service) installReset(ctx context.Context, tx store.Tx, ident identity,
 	req InstallRequest, existing store.LlamacppVersion, now time.Time,
-	out *InstallResult) error {
+	out *InstallResult, sink *events.Sink) error {
 
 	from := string(existing.State)
 	res, err := s.enqueueInstall(ctx, tx, ident, req, now,
@@ -576,7 +600,7 @@ func (s *Service) installReset(ctx context.Context, tx store.Tx, ident identity,
 			return s.event(ctx, tx, now, existing.ID, "llamacpp_version_reset",
 				model.LevelInfo,
 				fmt.Sprintf("llama.cpp %s was reset for another attempt", existing.ID),
-				&from, ptr(string(model.VersionPending)))
+				&from, ptr(string(model.VersionPending)), sink)
 		})
 	if err != nil {
 		return err
@@ -668,7 +692,10 @@ func (s *Service) activate(ctx context.Context, id string, req ActivateRequest,
 	}
 
 	now := s.now()
-	var out model.Job
+	var (
+		out  model.Job
+		sink events.Sink
+	)
 	err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		target, err := s.activationTarget(ctx, tx, id, rollback)
 		if err != nil {
@@ -706,7 +733,7 @@ func (s *Service) activate(ctx context.Context, id string, req ActivateRequest,
 				return s.event(ctx, tx, now, target.ID, "llamacpp_activation_requested",
 					model.LevelInfo,
 					fmt.Sprintf("llama.cpp %s was asked to become active", target.ID),
-					nil, nil)
+					nil, nil, &sink)
 			},
 		})
 		if err != nil {
@@ -718,6 +745,7 @@ func (s *Service) activate(ctx context.Context, id string, req ActivateRequest,
 	if err != nil {
 		return model.Job{}, err
 	}
+	s.publish(&sink)
 	s.queue.Wake()
 	return out, nil
 }
@@ -791,7 +819,10 @@ func (s *Service) Delete(ctx context.Context, id string) (model.Job, error) {
 		return model.Job{}, err
 	}
 
-	var out model.Job
+	var (
+		out  model.Job
+		sink events.Sink
+	)
 	err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		res, err := s.queue.EnqueueTx(ctx, tx, jobs.EnqueueParams{
 			Kind:     model.JobLlamacppDelete,
@@ -803,7 +834,7 @@ func (s *Service) Delete(ctx context.Context, id string) (model.Job, error) {
 			Domain: func(ctx context.Context, tx store.Tx, _ model.Job) error {
 				return s.event(ctx, tx, now, id, "llamacpp_version_delete_requested",
 					model.LevelInfo, fmt.Sprintf("llama.cpp %s was queued for deletion", id),
-					nil, nil)
+					nil, nil, &sink)
 			},
 		})
 		if err != nil {
@@ -815,6 +846,7 @@ func (s *Service) Delete(ctx context.Context, id string) (model.Job, error) {
 	if err != nil {
 		return model.Job{}, err
 	}
+	s.publish(&sink)
 	s.queue.Wake()
 	return out, nil
 }
@@ -831,14 +863,20 @@ func (s *Service) keepPrevious(ctx context.Context) (bool, error) {
 // event appends one `events` row inside the caller's transaction. Every
 // transition in §2.5 writes one, which is why this is a method and not a
 // decision each call site makes.
+//
+// sink collects the row it wrote so publish can fan out THAT row once the
+// transaction commits (see events.Sink). Passing nil is how a caller says "this
+// write has no live audience" — the boot-time repair paths — and never a way to
+// skip the frame for a transition a screen is watching.
 func (s *Service) event(ctx context.Context, tx store.Tx, now time.Time, versionID,
-	action string, level model.EventLevel, message string, from, to *string) error {
+	action string, level model.EventLevel, message string, from, to *string,
+	sink *events.Sink) error {
 
 	if s.events == nil {
 		return nil
 	}
 	subjectType := "llamacpp_version"
-	return s.events.Append(ctx, tx, model.Event{
+	ev := model.Event{
 		ID:          s.newID(now),
 		At:          now.UnixMilli(),
 		Level:       level,
@@ -850,29 +888,30 @@ func (s *Service) event(ctx context.Context, tx store.Tx, now time.Time, version
 		ToState:     to,
 		Actor:       model.ActorAdmin,
 		Message:     message,
-	})
+	}
+	if err := s.events.Append(ctx, tx, ev); err != nil {
+		return err
+	}
+	sink.Add(ev)
+	return nil
 }
 
-// publish pushes an event onto the SSE hub after the transaction that wrote it
-// has committed.
-func (s *Service) publish(now time.Time, versionID, action string,
-	level model.EventLevel, message string) {
-
+// publish pushes the rows sink collected onto the SSE hub, and must be called
+// only after the transaction that wrote them has committed.
+//
+// It publishes the stored rows rather than building new ones. Both halves of
+// that matter: every §2.5 transition reaches the `events` firehose the audit
+// views read (a terminal `ready`/`failed`/`deleted` that only ever moved the
+// typed `llamacpp` topic left the Events screen narrating installs that never
+// end), and each frame carries the ULID, actor and message its row holds, which
+// is the identity internal/sse's Last-Event-ID replay dedups against.
+func (s *Service) publish(sink *events.Sink) {
 	if s.events == nil {
 		return
 	}
-	subjectType := "llamacpp_version"
-	s.events.Publish(model.Event{
-		ID:          s.newID(now),
-		At:          now.UnixMilli(),
-		Level:       level,
-		Category:    model.CategoryLlamacpp,
-		SubjectType: &subjectType,
-		SubjectID:   &versionID,
-		Action:      action,
-		Actor:       model.ActorSystem,
-		Message:     message,
-	})
+	for _, ev := range sink.Drain() {
+		s.events.Publish(ev)
+	}
 }
 
 // identity is a request resolved to the three-part id and everything the worker

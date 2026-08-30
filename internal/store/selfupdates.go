@@ -343,6 +343,10 @@ type Notification struct {
 	// five-command downgrade procedure, the `install-units` repair line — as a
 	// json_valid blob.
 	ActionJSON *string
+	// DismissedAt is when a human cleared the card, or nil while it is still
+	// outstanding. It is a stamp rather than a delete so §2.11's "dismissed +
+	// 30 days" retention has something to sweep.
+	DismissedAt *int64
 }
 
 // AppendNotification writes one `notifications` row.

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jlbyh2o/llamaman/internal/buildinfo"
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/hw"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/llamacpp/github"
@@ -475,14 +476,23 @@ func (w *InstallWorker) setState(ctx context.Context, t *jobs.Task, id string,
 	state model.VersionState) error {
 
 	now := w.svc.now()
-	return t.Write(ctx, func(ctx context.Context, tx store.Tx) error {
+	var sink events.Sink
+	if err := t.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		if _, err := w.svc.store.SetLlamacppVersionState(ctx, tx, id, state,
 			now.UnixMilli()); err != nil {
 			return err
 		}
 		return w.svc.event(ctx, tx, now, id, "llamacpp_version_state", model.LevelInfo,
-			fmt.Sprintf("llama.cpp %s is %s", id, state), nil, ptr(string(state)))
-	})
+			fmt.Sprintf("llama.cpp %s is %s", id, state), nil, ptr(string(state)), &sink)
+	}); err != nil {
+		return err
+	}
+	// AFTER the commit, never inside it. These are the transitions the wizard's
+	// llama.cpp step and the versions list narrate — `fetching`, `building`,
+	// `verifying` — and a row that moved without a frame is a screen that says
+	// "Working" until someone reloads it.
+	w.svc.publish(&sink)
+	return nil
 }
 
 // enterVerifying returns a function that moves the row into `verifying` the
@@ -544,7 +554,8 @@ func (w *InstallWorker) succeeded(jobID string, p installParams,
 	r store.LlamacppInstallResult) jobs.Outcome {
 
 	now := w.svc.now()
-	return jobs.Succeeded(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
+	sink := &events.Sink{}
+	out := jobs.Succeeded(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
 		if _, err := w.svc.store.CompleteLlamacppInstall(ctx, tx, p.VersionID, r,
 			now.UnixMilli()); err != nil {
 			return err
@@ -554,14 +565,17 @@ func (w *InstallWorker) succeeded(jobID string, p installParams,
 		}
 		return w.svc.event(ctx, tx, now, p.VersionID, "llamacpp_version_ready",
 			model.LevelInfo, fmt.Sprintf("llama.cpp %s is ready", p.VersionID),
-			nil, ptr(string(model.VersionReady)))
+			nil, ptr(string(model.VersionReady)), sink)
 	})
+	out.AfterCommit = func() { w.svc.publish(sink) }
+	return out
 }
 
 // canceled is §2.5's cancel edge.
 func (w *InstallWorker) canceled(jobID string, p installParams) jobs.Outcome {
 	now := w.svc.now()
-	return jobs.Canceled(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
+	sink := &events.Sink{}
+	out := jobs.Canceled(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
 		if _, err := w.svc.store.SetLlamacppVersionState(ctx, tx, p.VersionID,
 			model.VersionCanceled, now.UnixMilli()); err != nil {
 			return err
@@ -571,8 +585,10 @@ func (w *InstallWorker) canceled(jobID string, p installParams) jobs.Outcome {
 		}
 		return w.svc.event(ctx, tx, now, p.VersionID, "llamacpp_version_canceled",
 			model.LevelInfo, fmt.Sprintf("llama.cpp %s was canceled", p.VersionID),
-			nil, ptr(string(model.VersionCanceled)))
+			nil, ptr(string(model.VersionCanceled)), sink)
 	})
+	out.AfterCommit = func() { w.svc.publish(sink) }
+	return out
 }
 
 // failed keeps the log and the failing step, which is what makes a Retry a warm
@@ -585,7 +601,8 @@ func (w *InstallWorker) failed(jobID string, p installParams, state model.Versio
 	if step != "" {
 		stepPtr = &step
 	}
-	return jobs.Failed(string(code), message, func(ctx context.Context, tx store.Tx,
+	sink := &events.Sink{}
+	out := jobs.Failed(string(code), message, func(ctx context.Context, tx store.Tx,
 		_ model.JobState) error {
 
 		if _, err := w.svc.store.FailLlamacppVersion(ctx, tx, p.VersionID, store.LlamacppFailure{
@@ -602,8 +619,10 @@ func (w *InstallWorker) failed(jobID string, p installParams, state model.Versio
 			return err
 		}
 		return w.svc.event(ctx, tx, now, p.VersionID, "llamacpp_version_failed",
-			model.LevelError, message, nil, ptr(string(state)))
+			model.LevelError, message, nil, ptr(string(state)), sink)
 	})
+	out.AfterCommit = func() { w.svc.publish(sink) }
+	return out
 }
 
 // fallbackToSource is D18's second half: the prebuilt row is kept as
@@ -625,7 +644,10 @@ func (w *InstallWorker) fallbackToSource(jobID string, p installParams,
 	}
 	srcID := VersionID(p.Tag, p.Backend, model.AcquisitionSource)
 
-	return jobs.Failed(string(CodeVerificationFailed), diagnosis,
+	// Both rows the fallback writes — the prebuilt that was rejected and the
+	// source build enqueued in its place — go out together once this closes.
+	sink := &events.Sink{}
+	out := jobs.Failed(string(CodeVerificationFailed), diagnosis,
 		func(ctx context.Context, tx store.Tx, _ model.JobState) error {
 			if _, err := w.svc.store.FailLlamacppVersion(ctx, tx, p.VersionID,
 				store.LlamacppFailure{
@@ -660,7 +682,7 @@ func (w *InstallWorker) fallbackToSource(jobID string, p installParams,
 				DomainID: srcID,
 				Params:   next,
 				Domain: func(ctx context.Context, tx store.Tx, _ model.Job) error {
-					return w.svc.upsertFallbackRow(ctx, tx, now, next)
+					return w.svc.upsertFallbackRow(ctx, tx, now, next, sink)
 				},
 			}); err != nil {
 				return err
@@ -673,14 +695,16 @@ func (w *InstallWorker) fallbackToSource(jobID string, p installParams,
 				model.LevelWarn,
 				fmt.Sprintf("the %s prebuilt was rejected (%s) — building %s from source instead",
 					p.Tag, diagnosis, p.Tag),
-				nil, ptr(string(model.VersionFailedVerification)))
+				nil, ptr(string(model.VersionFailedVerification)), sink)
 		})
+	out.AfterCommit = func() { w.svc.publish(sink) }
+	return out
 }
 
 // upsertFallbackRow inserts the replacement row, or resets one left over from an
 // earlier attempt at the same fallback.
 func (s *Service) upsertFallbackRow(ctx context.Context, tx store.Tx, now time.Time,
-	p installParams) error {
+	p installParams, sink *events.Sink) error {
 
 	existing, err := s.store.LlamacppVersion(ctx, tx, p.VersionID)
 	switch {
@@ -717,7 +741,7 @@ func (s *Service) upsertFallbackRow(ctx context.Context, tx store.Tx, now time.T
 	return s.event(ctx, tx, now, p.VersionID, "llamacpp_version_created", model.LevelInfo,
 		fmt.Sprintf("llama.cpp %s was enqueued to replace a prebuilt that would not run here",
 			p.VersionID),
-		nil, ptr(string(model.VersionPending)))
+		nil, ptr(string(model.VersionPending)), sink)
 }
 
 func strPtr(s string) *string { return &s }

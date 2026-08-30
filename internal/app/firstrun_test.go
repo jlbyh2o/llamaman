@@ -258,11 +258,21 @@ func TestFirstRunClaimFromLoopback(t *testing.T) {
 	}
 	var session struct {
 		Authenticated bool `json:"authenticated"`
+		Claimed       bool `json:"claimed"`
 		SetupComplete bool `json:"setup_complete"`
 	}
 	decodeInto(t, c.do(http.MethodGet, "/api/v1/auth/session", "", nil), &session)
-	if !session.Authenticated || !session.SetupComplete {
+	if !session.Authenticated || !session.Claimed {
 		t.Fatalf("auth/session = %+v, want an authenticated caller on a claimed host", session)
+	}
+	// The two facts are DIFFERENT questions and this host is the case that
+	// separates them: the password step has run, so `admin_account` exists and
+	// the host is claimed — but the wizard has not reached `done`, so it is not
+	// complete. Answering `setup_complete: true` here is what used to send a
+	// returning browser to a dashboard it was not ready for, silently abandoning
+	// a wizard section 11.2 requires be resumable.
+	if session.SetupComplete {
+		t.Errorf("auth/session reported setup_complete on a host whose wizard has not finished")
 	}
 }
 

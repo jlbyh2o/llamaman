@@ -109,6 +109,23 @@ type Outcome struct {
 	// only for a kind with no domain row — `maintenance`, whose job row IS the
 	// record (§2.3a).
 	Commit CommitFunc
+
+	// AfterCommit runs once Commit's transaction has COMMITTED, and never if it
+	// did not run or did not commit. It is the second half of DESIGN §1's
+	// "emits an events row, and publishes an SSE frame" for the transitions a
+	// worker writes on its way out — `ready`, `failed`, `canceled`, `deleted`.
+	//
+	// Those are precisely the transitions a service cannot publish for itself:
+	// the write lives in a closure the queue runs inside its own closing
+	// transaction, minutes after the method that built the Outcome returned, so
+	// there is no "after the write" for the worker to hook. Without this the
+	// terminal states are written to `events` and never reach the wire, and the
+	// audit views — the Events screen, the dashboard's recent events — miss
+	// every ending while narrating every beginning.
+	//
+	// It runs on the queue's goroutine, so it must not block: publishing to the
+	// Hub is what it is for.
+	AfterCommit func()
 }
 
 // Succeeded closes the job `succeeded`.
@@ -203,9 +220,17 @@ func (t *Task) SetProgress(ctx context.Context, v any) error {
 // SetProgressJSON writes `progress_json` verbatim. The column carries a
 // json_valid CHECK, so a malformed string is refused by the database.
 func (t *Task) SetProgressJSON(ctx context.Context, progressJSON string) error {
-	return t.q.s.Write(ctx, func(ctx context.Context, tx store.Tx) error {
+	if err := t.q.s.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		return t.q.s.SetJobProgress(ctx, tx, t.job.ID, &progressJSON)
-	})
+	}); err != nil {
+		return err
+	}
+	// Section 3.14's "progress arrives over SSE". This is the only moment a
+	// long action has anything new to say between its start and its end, so a
+	// queue that wrote progress and did not publish it left every progress bar
+	// in the app frozen at whatever it read when it mounted.
+	t.q.notify(ctx, t.job.ID)
+	return nil
 }
 
 // Write runs fn in one write transaction, which is how a worker moves its domain

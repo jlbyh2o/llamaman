@@ -57,6 +57,42 @@ type Config struct {
 	// documented endpoints, and a build gap is reported, never faked.
 	Instances InstanceService
 
+	// InstanceControl serves the supervision half of section 3.10 — start,
+	// stop, restart, safe-start, reset-failed, autostart, pin-ngl, status,
+	// usage, starts, command, logs, the three llama-server proxies, the
+	// `POST /instances/validate` dry run and `GET /ports/suggest`.
+	//
+	// It is a SECOND interface rather than more methods on Instances because
+	// the two have different collaborators: the five endpoints above answer
+	// from the database alone, while these need the supervisor, the systemd
+	// controller, the journal and the fit calculator. internal/app satisfies
+	// this one, since it is the only place that holds all of them at once. Nil
+	// answers those routes 503.
+	InstanceControl InstanceControlService
+
+	// Presets serves section 3.11. internal/app satisfies it over the store.
+	// Nil answers 503.
+	Presets PresetService
+
+	// System serves the eleven rows of section 3.3, plus the D50 diagnostics
+	// bundle section 4 screen 16 puts a button on. internal/app satisfies it:
+	// every fact in that group is a host fact the boot probe learned, and the
+	// composition root is where those live.
+	//
+	// `GET /system/capabilities` is the one route in this whole Config whose
+	// absence is a correctness bug rather than a missing feature: section 11.1a
+	// defines degraded modes the daemon is expected to SERVE in, and a daemon
+	// that detects F9 or F10 and cannot say so leaves every screen asserting
+	// the host is fine. Nil answers 503 rather than 404, so the UI can tell
+	// "this build has no system service" from "this route does not exist".
+	System SystemService
+
+	// SettingsAdmin serves section 3.4's three rows. It is named apart from
+	// Settings below because the two are different surfaces on the same data:
+	// this one is the admin API over the whole registry, that one is the single
+	// typed read this layer performs for its own use.
+	SettingsAdmin SettingsService
+
 	// Models serves the local-model and cache endpoints of section 3.7 —
 	// the catalog, the delete preview and its guards, projector pairing, cache
 	// roots, scans and strays. internal/models satisfies it. Nil answers 503,
@@ -246,6 +282,18 @@ func (a *API) register() error {
 		add(rt)
 	}
 	for _, rt := range a.instanceRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.instanceControlRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.presetRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.systemRoutes() {
+		add(rt)
+	}
+	for _, rt := range a.settingsRoutes() {
 		add(rt)
 	}
 	for _, rt := range a.llamacppRoutes() {

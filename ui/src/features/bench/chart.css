@@ -1,0 +1,49 @@
+/**
+ * uPlot legend, restyled onto our own tokens.
+ *
+ * uPlot draws the plot itself on canvas — colors are set inline, in JS, at chart-build time in
+ * `UplotChart.tsx` — but the legend is a plain DOM table with no inline styling of its own, so
+ * without this it renders in the browser's default black-on-white. Scoped under `.lm-chart` rather
+ * than uPlot's bare `.u-legend`, so a page that never imports this component is never affected.
+ */
+
+.lm-chart .u-legend {
+  font-size: 0.75rem;
+  color: var(--lm-text-muted);
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+.lm-chart .u-legend th {
+  font-weight: 500;
+  text-align: left;
+  padding: 0;
+}
+
+.lm-chart .u-legend td {
+  padding: 0 0.25rem 0 0;
+}
+
+.lm-chart .u-legend .u-marker {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  display: inline-block;
+}
+
+.lm-chart .u-legend tr {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.lm-chart .u-select {
+  background: var(--lm-accent-soft);
+}
+
+.lm-chart .u-cursor-x,
+.lm-chart .u-cursor-y {
+  border-color: var(--lm-border-strong);
+}

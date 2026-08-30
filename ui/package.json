@@ -8,7 +8,11 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "gen:api": "node scripts/gen-api-types.mjs",
+    "gen:api:check": "node scripts/gen-api-types.mjs --check",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

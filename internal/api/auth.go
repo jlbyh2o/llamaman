@@ -117,8 +117,25 @@ func (a authenticator) VerifyCSRF(ctx context.Context, s *middleware.Session, co
 }
 
 // SessionStateDTO is the body of `GET /api/v1/auth/session` (section 3.1).
+//
+// `claimed` and `setup_complete` are DIFFERENT questions and answering them from
+// two different places is the point — the same point `GET /api/v1/meta` already
+// makes in its own words. `claimed` is "`admin_account` exists": the one-time
+// setup token has been burned. `setup_complete` is "the wizard's `done` step is
+// complete".
+//
+// A host can be claimed without being complete — that is a wizard interrupted
+// after the password step, which section 11.2 requires be RESUMABLE — and
+// collapsing the two sends such a browser to a dashboard it is not ready for.
+// This endpoint used to answer `setup_complete` with the account fact, so the
+// SPA, which branches on it, abandoned every unfinished wizard the moment a
+// user navigated to anything but a `/setup` URL. Both facts are on the wire
+// now, and the shell reads them as the two questions they are.
 type SessionStateDTO struct {
 	Authenticated bool `json:"authenticated"`
+	// Claimed is `admin_account` exists.
+	Claimed bool `json:"claimed"`
+	// SetupComplete is the wizard's `done` step is complete.
 	SetupComplete bool `json:"setup_complete"`
 	// ExpiresAt is null when the request carries no session.
 	ExpiresAt *string `json:"expires_at"`
@@ -166,8 +183,9 @@ func (a *API) sessionStateRoute() Route {
 		Pattern:     BasePath + "/auth/session",
 		Auth:        AuthPublic,
 		OperationID: "getAuthSession",
-		Summary:     "Whether this request carries a session, whether the host is set up, and when the session expires.",
-		Tag:         "auth",
+		Summary: "Whether this request carries a session, whether the host has been claimed, " +
+			"whether the wizard has finished, and when the session expires.",
+		Tag: "auth",
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			svc, err := a.sessions()
 			if err != nil {
@@ -187,11 +205,26 @@ func (a *API) sessionStateRoute() Route {
 			if st.Authenticated {
 				a.refreshCSRFCookie(w, r)
 			}
-			if err := WriteJSON(w, http.StatusOK, SessionStateDTO{
+			// The auth service knows only the ACCOUNT fact, which is
+			// `claimed`. Whether the wizard finished is the setup service's
+			// answer and reaches this layer through the same MetaProvider
+			// `GET /api/v1/meta` uses, so the two endpoints can never come to
+			// disagree about what "set up" means.
+			dto := SessionStateDTO{
 				Authenticated: st.Authenticated,
+				Claimed:       st.SetupComplete,
 				SetupComplete: st.SetupComplete,
 				ExpiresAt:     TimePtr(st.ExpiresAt),
-			}); err != nil {
+			}
+			if a.cfg.Meta != nil {
+				meta, err := a.cfg.Meta.Meta(r.Context())
+				if err != nil {
+					WriteError(w, r, a.log, err)
+					return
+				}
+				dto.Claimed, dto.SetupComplete = meta.Claimed, meta.SetupComplete
+			}
+			if err := WriteJSON(w, http.StatusOK, dto); err != nil {
 				WriteError(w, r, a.log, err)
 			}
 		}),

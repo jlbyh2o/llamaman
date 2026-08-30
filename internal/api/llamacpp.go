@@ -1073,8 +1073,14 @@ type PlanDTO struct {
 	MissingTools     []string `json:"missing_tools"`
 	CUDAArch         []string `json:"cuda_arch"`
 	FreeSpaceOK      bool     `json:"free_space_ok"`
-	FreeBytes        int64    `json:"free_bytes"`
-	RequiredBytes    int64    `json:"required_bytes"`
+	// FreeSpaceKnown reports whether the statfs behind FreeBytes ran at all. A
+	// failed probe reports `free_space_known: false`, and the UI must render
+	// "unknown" rather than the zero in FreeBytes — "Free space 0 B of 3 GiB
+	// needed" for a disk with 360 GiB free tells the user to fix something that
+	// is not broken and disables the button that finishes setup.
+	FreeSpaceKnown bool  `json:"free_space_known"`
+	FreeBytes      int64 `json:"free_bytes"`
+	RequiredBytes  int64 `json:"required_bytes"`
 	// CanProceed folds the checks above, so the UI can enable or disable the
 	// Install button without re-deriving the rule.
 	CanProceed bool `json:"can_proceed"`
@@ -1200,6 +1206,7 @@ func planDTO(p llamacpp.Plan) PlanDTO {
 		MissingTools:     p.MissingTools,
 		CUDAArch:         p.CUDAArch,
 		FreeSpaceOK:      p.FreeSpaceOK,
+		FreeSpaceKnown:   p.FreeSpaceKnown,
 		FreeBytes:        p.FreeBytes,
 		RequiredBytes:    p.RequiredBytes,
 		CanProceed:       p.CanProceed,

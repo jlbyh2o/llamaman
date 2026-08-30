@@ -45,3 +45,10 @@ node_modules/
 
 # Test stub binaries are built on demand by the tests
 /testdata/stubllama/stubllama
+
+# Playwright: the saved session, per-run artifacts and the HTML report. The
+# specs under ui/e2e/ are committed; nothing a run produces is.
+/ui/e2e/.auth/
+/ui/e2e/.output/
+/ui/playwright-report/
+/ui/test-results/

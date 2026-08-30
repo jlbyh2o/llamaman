@@ -68,6 +68,10 @@ func (q *Queue) Cancel(ctx context.Context, id string) (model.Job, error) {
 		out = j
 		return nil
 	})
+	if err != nil {
+		return model.Job{}, err
+	}
+	q.notify(ctx, id)
 	return out, err
 }
 
@@ -103,6 +107,7 @@ func (q *Queue) Retry(ctx context.Context, id string) (model.Job, error) {
 	if err != nil {
 		return model.Job{}, err
 	}
+	q.notify(ctx, id)
 	q.Wake()
 	return out, nil
 }
@@ -130,7 +135,7 @@ func (q *Queue) Resume(ctx context.Context, id string, domain CommitFunc) error 
 }
 
 func (q *Queue) setLiveState(ctx context.Context, id string, state model.JobState, domain CommitFunc) error {
-	return q.s.Write(ctx, func(ctx context.Context, tx store.Tx) error {
+	if err := q.s.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		j, err := q.s.Job(ctx, tx, id)
 		if err != nil {
 			return err
@@ -145,7 +150,11 @@ func (q *Queue) setLiveState(ctx context.Context, id string, state model.JobStat
 			return domain(ctx, tx, state)
 		}
 		return q.commitDomain(ctx, tx, j, state)
-	})
+	}); err != nil {
+		return err
+	}
+	q.notify(ctx, id)
+	return nil
 }
 
 // Triage is one row boot recovery resolved, and the state it was moved to.

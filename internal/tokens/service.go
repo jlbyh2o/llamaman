@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/store"
 )
@@ -247,6 +248,7 @@ func (s *Service) Mint(ctx context.Context, p MintParams) (Minted, error) {
 	if err != nil {
 		return Minted{}, err
 	}
+	var sink events.Sink
 
 	row := store.APIToken{
 		ID:           s.newID(now),
@@ -273,14 +275,14 @@ func (s *Service) Mint(ctx context.Context, p MintParams) (Minted, error) {
 		}
 		out = tokenOf(row, p.InstanceIDs)
 		return s.event(ctx, tx, now, row, "token_created", model.LevelInfo,
-			fmt.Sprintf("API token %s (%s) created", row.Name, row.Prefix))
+			fmt.Sprintf("API token %s (%s) created", row.Name, row.Prefix), &sink)
 	})
 	if err != nil {
 		return Minted{}, err
 	}
 
 	s.Invalidate()
-	s.publish(now, row, "token_created")
+	s.publish(&sink)
 	return Minted{Token: out, Secret: secret}, nil
 }
 
@@ -385,6 +387,7 @@ func (s *Service) Patch(ctx context.Context, id string, p PatchParams) (Token, e
 	var (
 		out  Token
 		from model.TokenState
+		sink events.Sink
 	)
 	err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		row, err := s.store.APIToken(ctx, tx, id)
@@ -455,8 +458,20 @@ func (s *Service) Patch(ctx context.Context, id string, p PatchParams) (Token, e
 			}
 		}
 		out = tokenOf(row, ids)
-		return s.event(ctx, tx, now, row, "token_updated", model.LevelInfo,
-			fmt.Sprintf("API token %s (%s) updated", row.Name, row.Prefix))
+		// A state change is its own action in §3.12's vocabulary — `token_active`,
+		// `token_disabled`, `token_revoked` — and the row has to say so, because
+		// the row is what the Events screen and the wire both read.
+		action := "token_updated"
+		level := model.LevelInfo
+		message := fmt.Sprintf("API token %s (%s) updated", row.Name, row.Prefix)
+		if p.State != nil && *p.State != from {
+			action = "token_" + string(*p.State)
+			message = fmt.Sprintf("API token %s (%s) is now %s", row.Name, row.Prefix, *p.State)
+			if *p.State == model.TokenRevoked {
+				level = model.LevelWarn
+			}
+		}
+		return s.event(ctx, tx, now, row, action, level, message, &sink)
 	})
 	if err != nil {
 		return Token{}, err
@@ -466,12 +481,7 @@ func (s *Service) Patch(ctx context.Context, id string, p PatchParams) (Token, e
 	// not have to wait out the old one.
 	s.limits.forget(id)
 	s.Invalidate()
-	if p.State != nil && *p.State != from {
-		s.publish(now, store.APIToken{ID: out.ID, Name: out.Name, Prefix: out.Prefix},
-			"token_"+string(*p.State))
-	} else {
-		s.publish(now, store.APIToken{ID: out.ID, Name: out.Name, Prefix: out.Prefix}, "token_updated")
-	}
+	s.publish(&sink)
 	return out, nil
 }
 
@@ -485,7 +495,10 @@ func (s *Service) Revoke(ctx context.Context, id string) error {
 	now := s.now()
 	nowMS := now.UnixMilli()
 
-	var row store.APIToken
+	var (
+		row  store.APIToken
+		sink events.Sink
+	)
 	err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		var err error
 		if row, err = s.store.APIToken(ctx, tx, id); err != nil {
@@ -499,7 +512,7 @@ func (s *Service) Revoke(ctx context.Context, id string) error {
 			return nil
 		}
 		return s.event(ctx, tx, now, row, "token_revoked", model.LevelWarn,
-			fmt.Sprintf("API token %s (%s) revoked", row.Name, row.Prefix))
+			fmt.Sprintf("API token %s (%s) revoked", row.Name, row.Prefix), &sink)
 	})
 	if err != nil {
 		return err
@@ -507,7 +520,7 @@ func (s *Service) Revoke(ctx context.Context, id string) error {
 
 	s.limits.forget(id)
 	s.Invalidate()
-	s.publish(now, row, "token_revoked")
+	s.publish(&sink)
 	return nil
 }
 
@@ -763,21 +776,33 @@ func tokenOf(row store.APIToken, instanceIDs []string) Token {
 
 // event appends one `events` row inside the caller's transaction. The message
 // carries the token's NAME and PREFIX and never anything derived from the
-// secret: §2.2's rule and CLAUDE.md's are the same rule, and an event message is
-// the one part of this system that is designed to be read later.
+// secret: §2.2's rule is absolute here, and an event message is the one part of
+// this system that is designed to be read later.
 func (s *Service) event(ctx context.Context, tx store.Tx, now time.Time, row store.APIToken,
-	action string, level model.EventLevel, message string) error {
+	action string, level model.EventLevel, message string, sink *events.Sink) error {
 	if s.events == nil {
 		return nil
 	}
-	return s.events.Append(ctx, tx, s.newEvent(now, row, action, level, message))
+	ev := s.newEvent(now, row, action, level, message)
+	if err := s.events.Append(ctx, tx, ev); err != nil {
+		return err
+	}
+	sink.Add(ev)
+	return nil
 }
 
-func (s *Service) publish(now time.Time, row store.APIToken, action string) {
+// publish fans out the rows sink collected, once their transaction has
+// committed. It publishes those rows rather than minting a lookalike: a frame
+// has to carry the ULID, level and message its row was stored under, or
+// internal/sse's Last-Event-ID dedup cannot recognize the two as one thing and
+// a reconnecting client sees the transition twice.
+func (s *Service) publish(sink *events.Sink) {
 	if s.events == nil {
 		return
 	}
-	s.events.Publish(s.newEvent(now, row, action, model.LevelInfo, ""))
+	for _, ev := range sink.Drain() {
+		s.events.Publish(ev)
+	}
 }
 
 func (s *Service) newEvent(now time.Time, row store.APIToken, action string,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/store"
@@ -102,15 +103,18 @@ func (w *Worker) preflight(ctx context.Context, t *jobs.Task, run *store.BenchRu
 	}
 	stopped := string(b)
 	now := s.now()
+	var sink events.Sink
 	if err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		if _, err := s.store.SetBenchRunStopped(ctx, tx, run.ID, &stopped); err != nil {
 			return err
 		}
 		return s.appendEvent(ctx, tx, *run, now, "bench_stopped_instances", model.LevelWarn,
-			fmt.Sprintf("%s is stopping %d instance(s) for exclusive GPU access", run.Name, len(ids)))
+			fmt.Sprintf("%s is stopping %d instance(s) for exclusive GPU access", run.Name, len(ids)),
+			&sink)
 	}); err != nil {
 		return err
 	}
+	s.publish(&sink)
 	run.StoppedInstancesJSON = &stopped
 	run.RestoreDone = false
 
@@ -202,17 +206,18 @@ func (s *Service) Restore(ctx context.Context, runID string) error {
 	s.reconcileNow(ctx)
 
 	now := s.now()
+	var sink events.Sink
 	if err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		if _, err := s.store.MarkBenchRestoreDone(ctx, tx, run.ID); err != nil {
 			return err
 		}
 		return s.appendEvent(ctx, tx, run, now, "bench_restored_instances", model.LevelInfo,
 			fmt.Sprintf("%s restarted %d of %d instance(s) it stopped",
-				run.Name, len(restored), len(ids)))
+				run.Name, len(restored), len(ids)), &sink)
 	}); err != nil {
 		return err
 	}
-	s.publish(run, now, "bench_restored_instances")
+	s.publish(&sink)
 	return nil
 }
 

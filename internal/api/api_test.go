@@ -243,6 +243,66 @@ func TestRoutingTable(t *testing.T) {
 		"GET /api/v1/bench/runs/{id}/export":  {AuthSession, "exportBenchRun"},
 		"POST /api/v1/bench/compare":          {AuthSession, "compareBenchRuns"},
 		"GET /api/v1/bench/series":            {AuthSession, "benchSeries"},
+
+		// Section 3.10's supervision half. Start, stop and restart write the
+		// DESIRED axis and answer 202; the supervisor is what acts. `safe-start`
+		// is section 3.10b's transient override and `reset-failed` is D64's
+		// window reset, and both reach the three `instance_status` columns
+		// section 2.8 names as the API's only exception.
+		"POST /api/v1/instances/{id}/start":        {AuthSession, "startInstance"},
+		"POST /api/v1/instances/{id}/stop":         {AuthSession, "stopInstance"},
+		"POST /api/v1/instances/{id}/restart":      {AuthSession, "restartInstance"},
+		"POST /api/v1/instances/{id}/safe-start":   {AuthSession, "safeStartInstance"},
+		"POST /api/v1/instances/{id}/reset-failed": {AuthSession, "resetFailedInstance"},
+		"PUT /api/v1/instances/{id}/autostart":     {AuthSession, "setInstanceAutostart"},
+		"POST /api/v1/instances/{id}/pin-ngl":      {AuthSession, "pinInstanceNGL"},
+		"GET /api/v1/instances/{id}/status":        {AuthSession, "getInstanceStatus"},
+		"GET /api/v1/instances/{id}/usage":         {AuthSession, "getInstanceUsage"},
+		"GET /api/v1/instances/{id}/starts":        {AuthSession, "listInstanceStarts"},
+		"GET /api/v1/instances/{id}/command":       {AuthSession, "getInstanceCommand"},
+		"GET /api/v1/instances/{id}/logs":          {AuthSession, "getInstanceLogs"},
+		"GET /api/v1/instances/{id}/props":         {AuthSession, "getInstanceProps"},
+		"GET /api/v1/instances/{id}/slots":         {AuthSession, "getInstanceSlots"},
+		"GET /api/v1/instances/{id}/metrics":       {AuthSession, "getInstanceMetrics"},
+		"POST /api/v1/instances/validate":          {AuthSession, "validateInstance"},
+		"GET /api/v1/ports/suggest":                {AuthSession, "suggestPort"},
+
+		// Section 3.11. `from-instance` takes its instance id in the BODY: the
+		// documented `/presets/from-instance/{id}` and `/presets/{id}/apply`
+		// are a genuine ServeMux conflict, and `{id}/apply` is the one that
+		// keeps the documented spelling (see instancectl.go).
+		"GET /api/v1/presets":                {AuthSession, "listPresets"},
+		"POST /api/v1/presets":               {AuthSession, "createPreset"},
+		"GET /api/v1/presets/{id}":           {AuthSession, "getPreset"},
+		"PATCH /api/v1/presets/{id}":         {AuthSession, "patchPreset"},
+		"DELETE /api/v1/presets/{id}":        {AuthSession, "deletePreset"},
+		"POST /api/v1/presets/from-instance": {AuthSession, "createPresetFromInstance"},
+		"POST /api/v1/presets/{id}/apply":    {AuthSession, "applyPreset"},
+
+		// Section 3.3. `capabilities` is the one the UI reads before it renders
+		// any control at all — section 11.1a's degraded modes are modes this
+		// daemon serves in, and without this row every screen asserts a healthy
+		// host. `restart` is the only route in this API that answers 429, and
+		// it has exactly one reason for it (D93).
+		"GET /api/v1/system/info":                        {AuthSession, "getSystemInfo"},
+		"GET /api/v1/system/capabilities":                {AuthSession, "getSystemCapabilities"},
+		"GET /api/v1/system/toolchain":                   {AuthSession, "getSystemToolchain"},
+		"POST /api/v1/system/toolchain/probe":            {AuthSession, "probeSystemToolchain"},
+		"GET /api/v1/system/gpus":                        {AuthSession, "listSystemGPUs"},
+		"GET /api/v1/system/disk":                        {AuthSession, "getSystemDisk"},
+		"GET /api/v1/system/units":                       {AuthSession, "listSystemUnits"},
+		"GET /api/v1/system/journal":                     {AuthSession, "getSystemJournal"},
+		"GET /api/v1/system/notifications":               {AuthSession, "listSystemNotifications"},
+		"POST /api/v1/system/notifications/{id}/dismiss": {AuthSession, "dismissSystemNotification"},
+		"GET /api/v1/system/diagnostics":                 {AuthSession, "downloadDiagnostics"},
+		"POST /api/v1/system/restart":                    {AuthSession, "restartSystem"},
+
+		// Section 3.4. Secrets are deliberately NOT here: each credential has
+		// its own validating triple under section 3.6, because a settings value
+		// is returned in the clear and a token must not be.
+		"GET /api/v1/settings":        {AuthSession, "getSettings"},
+		"PATCH /api/v1/settings":      {AuthSession, "patchSettings"},
+		"POST /api/v1/settings/reset": {AuthSession, "resetSettings"},
 	}
 
 	got := map[string]struct {

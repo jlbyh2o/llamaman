@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/store"
@@ -318,7 +319,10 @@ func (s *Service) Get(ctx context.Context, id string) (Detail, error) {
 // the rendered argv gains or loses `--mmproj` — so D69's recompute runs in the
 // same transaction.
 func (s *Service) PairMmproj(ctx context.Context, id, mmprojID string) (View, error) {
-	var out View
+	var (
+		out  View
+		sink events.Sink
+	)
 	err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		m, err := s.store.LocalModel(ctx, tx, id)
 		if err != nil {
@@ -348,7 +352,7 @@ func (s *Service) PairMmproj(ctx context.Context, id, mmprojID string) (View, er
 		if err := s.appendEvent(ctx, tx, model.Event{
 			Level: model.LevelInfo, Category: model.CategoryModel, Actor: model.ActorAdmin,
 			Action: "mmproj_paired", SubjectID: &id, Message: mmprojMessage(m, mmprojID),
-		}); err != nil {
+		}, &sink); err != nil {
 			return err
 		}
 		m.MmprojModelID = target
@@ -358,8 +362,7 @@ func (s *Service) PairMmproj(ctx context.Context, id, mmprojID string) (View, er
 		return nil
 	})
 	if err == nil {
-		s.publish(model.Event{Level: model.LevelInfo, Category: model.CategoryModel,
-			Actor: model.ActorAdmin, Action: "mmproj_paired", SubjectID: &id})
+		s.publish(&sink)
 	}
 	return out, err
 }
@@ -465,7 +468,9 @@ func (s *Service) recomputeFor(ctx context.Context, tx store.Tx, modelIDs ...str
 
 // appendEvent writes an `events` row inside the caller's transaction, filling in
 // the id, the instant and the subject type this service always uses.
-func (s *Service) appendEvent(ctx context.Context, tx store.Tx, ev model.Event) error {
+func (s *Service) appendEvent(ctx context.Context, tx store.Tx, ev model.Event,
+	sink *events.Sink) error {
+
 	if s.events == nil {
 		return nil
 	}
@@ -480,26 +485,29 @@ func (s *Service) appendEvent(ctx context.Context, tx store.Tx, ev model.Event) 
 		st := string(model.SubjectModel)
 		ev.SubjectType = &st
 	}
-	return s.events.Append(ctx, tx, ev)
+	if err := s.events.Append(ctx, tx, ev); err != nil {
+		return err
+	}
+	sink.Add(ev)
+	return nil
 }
 
-// publish pushes the SSE frame AFTER the transaction commits. Publishing inside
+// publish pushes the SSE frames AFTER the transaction commits. Publishing inside
 // one would announce a change a rollback could still undo.
-func (s *Service) publish(ev model.Event) {
+//
+// What goes out is the rows appendEvent wrote, not lookalikes assembled beside
+// them. A lookalike gets a fresh ULID and loses the message, which breaks the
+// identity internal/sse's Last-Event-ID replay dedups on ("a replayed row and
+// its live-published twin carry the same ULID"): the comparison never matches,
+// so a reconnecting client renders the change twice, the second time under an
+// id `GET /events/log` will never return.
+func (s *Service) publish(sink *events.Sink) {
 	if s.events == nil {
 		return
 	}
-	if ev.ID == "" {
-		ev.ID = s.newID(s.now())
+	for _, ev := range sink.Drain() {
+		s.events.Publish(ev)
 	}
-	if ev.At == 0 {
-		ev.At = s.now().UnixMilli()
-	}
-	if ev.SubjectType == nil && ev.SubjectID != nil {
-		st := string(model.SubjectModel)
-		ev.SubjectType = &st
-	}
-	s.events.Publish(ev)
 }
 
 func (s *Service) rootPaths(ctx context.Context, tx store.Tx) (map[string]string, error) {

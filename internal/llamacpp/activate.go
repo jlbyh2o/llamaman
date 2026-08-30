@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/model"
 	"github.com/jlbyh2o/llamaman/internal/store"
@@ -100,6 +101,7 @@ func (w *ActivateWorker) Run(ctx context.Context, t *jobs.Task) (jobs.Outcome, e
 	// id (D52), so the flip changes that input for every instance at once —
 	// and leaving the recompute out of this transaction is what would make the
 	// stored hash silently disagree with its own definition.
+	var sink events.Sink
 	err := t.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		var err error
 		target, err = w.svc.store.LlamacppVersion(ctx, tx, p.VersionID)
@@ -126,7 +128,7 @@ func (w *ActivateWorker) Run(ctx context.Context, t *jobs.Task) (jobs.Outcome, e
 			return err
 		}
 		return w.svc.event(ctx, tx, now, target.ID, "llamacpp_activated", model.LevelInfo,
-			fmt.Sprintf("llama.cpp %s is the active build", target.ID), nil, nil)
+			fmt.Sprintf("llama.cpp %s is the active build", target.ID), nil, nil, &sink)
 	})
 	if err != nil {
 		return w.activationFailed(p, err), nil
@@ -136,8 +138,26 @@ func (w *ActivateWorker) Run(ctx context.Context, t *jobs.Task) (jobs.Outcome, e
 	if err := w.repairLinks(ctx); err != nil {
 		return jobs.Outcome{}, err
 	}
-	w.svc.publish(now, target.ID, "llamacpp_activated", model.LevelInfo,
-		fmt.Sprintf("llama.cpp %s is the active build", target.ID))
+	w.svc.publish(&sink)
+
+	// §11.2's `llamacpp` step, closed here and nowhere else.
+	//
+	// It is the wizard's one non-skippable step after the password, and its
+	// meaning is precisely this moment: not "a build was downloaded" but "a
+	// build is ACTIVE", which is what every instance executes out of and what
+	// `POST /setup/complete` refuses without. Nothing marked it, so a host that
+	// had installed and activated a build still had the step `active`, every
+	// step behind it blocked, and the wizard permanently unfinishable.
+	//
+	// It runs after the commit and its failure is logged rather than returned:
+	// the activation succeeded, and failing the job over the wizard's
+	// bookkeeping would roll back nothing and lose the build.
+	if w.svc.wizard != nil {
+		if err := w.svc.wizard.MarkStep(ctx, model.StepLlamacpp); err != nil {
+			w.svc.log.Warn("could not mark the wizard's llama.cpp step complete",
+				"version_id", target.ID, "error", err)
+		}
+	}
 
 	// Step 5: the canary roll, when one was asked for.
 	if p.RestartInstances == RestartRolling {
@@ -222,6 +242,7 @@ func (w *ActivateWorker) revert(ctx context.Context, p activateParams, act store
 	// routine exists to prevent.
 	rctx := context.WithoutCancel(ctx)
 
+	var sink events.Sink
 	err := w.svc.store.Write(rctx, func(ctx context.Context, tx store.Tx) error {
 		if err := w.svc.store.RestoreLlamacppFlags(ctx, tx, act.Before); err != nil {
 			return err
@@ -234,7 +255,7 @@ func (w *ActivateWorker) revert(ctx context.Context, p activateParams, act store
 			return err
 		}
 		return w.svc.event(ctx, tx, now, p.VersionID, "llamacpp_activation_reverted",
-			model.LevelError, cause.Error(), nil, nil)
+			model.LevelError, cause.Error(), nil, nil, &sink)
 	})
 	if err != nil {
 		// The rows are the thing that must be right. If they cannot be put
@@ -265,8 +286,7 @@ func (w *ActivateWorker) revert(ctx context.Context, p activateParams, act store
 		"The canary failed and the activation was rolled back",
 		fmt.Sprintf("%v. Every instance is back on the build it was running.", cause),
 		p.VersionID)
-	w.svc.publish(now, p.VersionID, "llamacpp_activation_reverted", model.LevelError,
-		cause.Error())
+	w.svc.publish(&sink)
 
 	return jobs.Failed(string(CodeCanaryFailed), cause.Error(), nil)
 }
@@ -277,7 +297,8 @@ func (w *ActivateWorker) revert(ctx context.Context, p activateParams, act store
 // a version directory a delete worker has already removed.
 func (w *ActivateWorker) activationSucceeded(p activateParams, act store.Activation) jobs.Outcome {
 	now := w.svc.now()
-	return jobs.Succeeded(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
+	sink := &events.Sink{}
+	out := jobs.Succeeded(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
 		if act.DeletionCandidateID == "" {
 			return nil
 		}
@@ -289,7 +310,7 @@ func (w *ActivateWorker) activationSucceeded(p activateParams, act store.Activat
 				return w.svc.event(ctx, tx, now, act.DeletionCandidateID,
 					"llamacpp_version_delete_requested", model.LevelInfo,
 					fmt.Sprintf("llama.cpp %s is no longer retained and was queued for deletion",
-						act.DeletionCandidateID), nil, nil)
+						act.DeletionCandidateID), nil, nil, sink)
 			},
 		})
 		var me model.Error
@@ -303,6 +324,8 @@ func (w *ActivateWorker) activationSucceeded(p activateParams, act store.Activat
 		}
 		return err
 	})
+	out.AfterCommit = func() { w.svc.publish(sink) }
+	return out
 }
 
 // activationFailed closes a job whose step-3 transaction never committed. No
@@ -477,25 +500,30 @@ func (s *Service) closeInterruptedActivation(ctx context.Context, j model.Job,
 		return err
 	}
 
+	var sink events.Sink
 	if !committed {
-		return s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
+		if err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 			if err := s.event(ctx, tx, now, p.VersionID, "llamacpp_activation_abandoned",
 				model.LevelWarn,
 				fmt.Sprintf("the daemon restarted before %s was activated; nothing changed",
-					p.VersionID), nil, nil); err != nil {
+					p.VersionID), nil, nil, &sink); err != nil {
 				return err
 			}
 			return s.finishJob(ctx, tx, j.ID, model.JobFailed,
 				string(model.CodeDaemonRestarted),
 				"the daemon restarted before the activation committed", now)
-		})
+		}); err != nil {
+			return err
+		}
+		s.publish(&sink)
+		return nil
 	}
 
 	// The activation is complete but for a roll nobody is waiting on. Close it
 	// `succeeded`, enqueue the delete the params named if one is due, and offer
 	// the restart that did not finish — `restart_required` is already true on
 	// every running instance, because step 3 recomputed the hashes.
-	return s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
+	if err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		if p.DeletionCandidateID != "" {
 			if _, err := s.queue.EnqueueTx(ctx, tx, jobs.EnqueueParams{
 				Kind:     model.JobLlamacppDelete,
@@ -521,9 +549,13 @@ func (s *Service) closeInterruptedActivation(ctx context.Context, j model.Job,
 		if err := s.event(ctx, tx, now, p.VersionID, "llamacpp_activation_completed",
 			model.LevelInfo,
 			fmt.Sprintf("llama.cpp %s was already active when the daemon restarted", p.VersionID),
-			nil, nil); err != nil {
+			nil, nil, &sink); err != nil {
 			return err
 		}
 		return s.finishJob(ctx, tx, j.ID, model.JobSucceeded, "", "", now)
-	})
+	}); err != nil {
+		return err
+	}
+	s.publish(&sink)
+	return nil
 }

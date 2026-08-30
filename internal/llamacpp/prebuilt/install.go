@@ -202,6 +202,20 @@ func Install(ctx context.Context, req InstallRequest) (InstallResult, error) {
 	}
 	res.Extraction = ex
 
+	// --- 2a. normalize the layout --------------------------------------------
+	// Upstream ships two shapes and only one of them is what StripTopLevel was
+	// written for. See layout.go: a flat release grows a `bin/` and `lib/` view
+	// of itself here, and a tree that already has `bin/` is untouched.
+	normalized, err := NormalizeLayout(staging)
+	if err != nil {
+		res.FailingStep = model.StepFetch
+		return res, err
+	}
+	if normalized {
+		req.Progress.report(model.StepFetch, 0, 0,
+			"normalized a flat release into bin/ and lib/")
+	}
+
 	// --- 3. verify (D18, D19) ------------------------------------------------
 	req.Progress.report(model.StepVerify, 0, 0, "running llama-server --version on this host")
 	vr, err := Verify(ctx, VerifyOptions{

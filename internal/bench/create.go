@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/instances"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/model"
@@ -71,6 +72,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (CreateResult, 
 	}
 
 	now := s.now()
+	var sink events.Sink
 	reps := req.Repetitions
 	if reps <= 0 {
 		reps = int(s.settingInt(ctx, "bench.default_repetitions", 3))
@@ -221,7 +223,8 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (CreateResult, 
 		}
 
 		if err := s.appendEvent(ctx, tx, run, now, "bench_created", model.LevelInfo,
-			fmt.Sprintf("%s: %d points against %s", run.Name, run.PointsTotal, run.ModelLabel)); err != nil {
+			fmt.Sprintf("%s: %d points against %s", run.Name, run.PointsTotal, run.ModelLabel),
+			&sink); err != nil {
 			return err
 		}
 
@@ -242,13 +245,16 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (CreateResult, 
 	if !req.Draft && !replay {
 		s.queue.Wake()
 	}
-	s.publish(run, now, "bench_created")
+	s.publish(&sink)
 	return CreateResult{Run: run, Points: rows, Job: job, Replayed: replay}, nil
 }
 
 // Start is `POST /api/v1/bench/runs/{id}/start`: draft → queued.
 func (s *Service) Start(ctx context.Context, id string) (model.Job, error) {
-	var job model.Job
+	var (
+		job  model.Job
+		sink events.Sink
+	)
 	now := s.now()
 
 	err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
@@ -269,11 +275,12 @@ func (s *Service) Start(ctx context.Context, id string) (model.Job, error) {
 		}
 		job = res.Job
 		return s.appendEvent(ctx, tx, run, now, "bench_queued", model.LevelInfo,
-			run.Name+" was queued")
+			run.Name+" was queued", &sink)
 	})
 	if err != nil {
 		return model.Job{}, err
 	}
+	s.publish(&sink)
 	s.queue.Wake()
 	return job, nil
 }
@@ -355,7 +362,8 @@ func (s *Service) Annotate(ctx context.Context, id, name string, notes *string) 
 // leaving production instances down, and §10 calls that the worst possible
 // outcome.
 func (s *Service) Delete(ctx context.Context, id string) error {
-	return s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
+	var sink events.Sink
+	if err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		run, err := s.store.BenchRun(ctx, tx, id)
 		if err != nil {
 			return err
@@ -378,8 +386,12 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 			return err
 		}
 		return s.appendEvent(ctx, tx, run, s.now(), "bench_deleted", model.LevelInfo,
-			run.Name+" was deleted")
-	})
+			run.Name+" was deleted", &sink)
+	}); err != nil {
+		return err
+	}
+	s.publish(&sink)
+	return nil
 }
 
 // pointRow projects an expanded Point onto its `bench_points` row, with the

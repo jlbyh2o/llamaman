@@ -20,12 +20,14 @@ import (
 	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/gateway"
 	"github.com/jlbyh2o/llamaman/internal/hf"
+	"github.com/jlbyh2o/llamaman/internal/hf/download"
 	"github.com/jlbyh2o/llamaman/internal/hw"
 	"github.com/jlbyh2o/llamaman/internal/instances"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/llamacpp"
 	"github.com/jlbyh2o/llamaman/internal/llamacpp/github"
 	"github.com/jlbyh2o/llamaman/internal/model"
+	"github.com/jlbyh2o/llamaman/internal/models"
 	"github.com/jlbyh2o/llamaman/internal/netutil"
 	"github.com/jlbyh2o/llamaman/internal/secrets"
 	"github.com/jlbyh2o/llamaman/internal/selfupdate"
@@ -59,6 +61,8 @@ type daemon struct {
 	auth        *auth.Service
 	setup       *setup.Service
 	instances   *instances.Service
+	models      *models.Service
+	downloads   *download.Service
 	supervisor  *supervisor.Supervisor
 	llamacpp    *llamacpp.Service
 	bench       *bench.Service
@@ -79,6 +83,13 @@ type daemon struct {
 	// machine: a second BeginSwap on a daemon that is already swapping is a
 	// no-op rather than a second drain.
 	swap chan struct{}
+	// restart is `POST /api/v1/system/restart`'s signal to the serve loop
+	// (section 3.3, section 9.4). It is the same shape as swap and for the same
+	// reason: the loop owns the listeners the ordered stop pauses, drains and
+	// hands to the fd store, so the endpoint can only ASK. Buffered by one with
+	// a non-blocking send, so a second click while a restart is already in
+	// flight is a no-op rather than a second drain.
+	restart chan struct{}
 
 	// gpus is step 6's GPU probe, shared by the supervisor's D17 attribution,
 	// the bench exclusivity guard and the fit calculator's host inputs. See
@@ -114,7 +125,8 @@ type daemon struct {
 //	step 12 workers and ResetFailed    the subsystems that own each worker
 func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 	log := opts.Logger
-	d := &daemon{opts: opts, log: log, swap: make(chan struct{}, 1)}
+	d := &daemon{opts: opts, log: log,
+		swap: make(chan struct{}, 1), restart: make(chan struct{}, 1)}
 
 	// --- step 1: scope, then state directory. The order matters: the
 	// state-directory fallback chain branches on the scope.
@@ -395,7 +407,14 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 	}
 	d.bootID = bootID
 
-	q, err := jobs.New(st, jobs.Options{BootID: bootID, Now: opts.Now, Logger: log})
+	q, err := jobs.New(st, jobs.Options{
+		BootID: bootID, Now: opts.Now, Logger: log,
+		// Section 3.14's `jobs` topic. Without a publisher every screen that
+		// narrates work — the wizard's llama.cpp step, the Downloads queue, the
+		// build log, the dashboard's active-jobs strip — shows whatever it read
+		// when it mounted, for as long as it stays open.
+		Publisher: jobPublisher{rec: d.recorder},
+	})
 	if err != nil {
 		d.close()
 		return nil, err
@@ -411,6 +430,15 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 	// §6.6 step 1's activation guard reads it: `llamacpp.Config.Bench` is the
 	// BenchGuard that answers "is a bench live", and a daemon that built the two
 	// the other way round would have to pass nil and mean it.
+	// The model catalog and the downloader, with their four workers. They come
+	// BEFORE the bench and llama.cpp services because both of those read models,
+	// and before the API because five of section 3.7's endpoints and all of
+	// section 3.8's answer from them (see catalog.go).
+	if err := d.buildCatalog(); err != nil {
+		d.close()
+		return nil, err
+	}
+
 	if err := d.buildBench(); err != nil {
 		d.close()
 		return nil, err
@@ -438,7 +466,7 @@ func boot(ctx context.Context, opts Options, f flags) (*daemon, error) {
 		return nil, err
 	}
 
-	apiHandler, err := d.buildAPI()
+	apiHandler, err := d.buildAPI(ctx)
 	if err != nil {
 		d.close()
 		return nil, err
@@ -736,7 +764,7 @@ func (d *daemon) currentBootID(ctx context.Context) (string, error) {
 
 // buildAPI wires the HTTP surface: the SSE transport over the hub and the
 // store, the SPA behind it, and the route registry in front of both.
-func (d *daemon) buildAPI() (http.Handler, error) {
+func (d *daemon) buildAPI(ctx context.Context) (http.Handler, error) {
 	ui, err := web.Handler()
 	if err != nil {
 		return nil, fmt.Errorf("mount the embedded UI: %w", err)
@@ -753,12 +781,23 @@ func (d *daemon) buildAPI() (http.Handler, error) {
 	// which is what lets that package stay free of every import under
 	// internal/api (section 1, invariant 4).
 	a, err := api.New(api.Config{
-		Logger:      d.log,
-		Now:         d.opts.Now,
-		Auth:        api.NewAuthenticator(d.auth),
-		Sessions:    d.auth,
-		Setup:       d.setup,
-		Instances:   d.instances,
+		Logger:    d.log,
+		Now:       d.opts.Now,
+		Auth:      api.NewAuthenticator(d.auth),
+		Sessions:  d.auth,
+		Setup:     d.setup,
+		Instances: d.instances,
+		// The supervision half of section 3.10, plus section 3.11 and
+		// `GET /ports/suggest`. It is a separate interface from Instances
+		// because it needs the supervisor, the systemd controller, the journal
+		// and the fit calculator, none of which the instance service owns.
+		InstanceControl: &instanceControlAPI{d: d},
+		Presets:         &presetAPI{d: d},
+		// Section 3.7's catalog and section 3.8's queue. Both were built above;
+		// a nil here is nine endpoints answering 503, which on a fresh install
+		// means the wizard cannot be completed at all.
+		Models:      d.models,
+		Downloads:   d.downloads,
 		Llamacpp:    d.llamacpp,
 		Bench:       d.bench,
 		HF:          d.hfClient,
@@ -795,11 +834,17 @@ func (d *daemon) buildAPI() (http.Handler, error) {
 		// `fit.margin_mib` (section 8.1). A registered setting nothing reads is
 		// a knob that lies, which SPEC section 3.9's zero-config mandate makes
 		// worse rather than better.
-		Settings:    d.settings,
-		Meta:        d,
-		Events:      stream,
-		Fallback:    ui,
-		Conformance: d.opts.Conformance,
+		Settings: d.settings,
+		// Section 3.3 and section 3.4. `GET /system/capabilities` is the one the
+		// UI reads before it renders any control at all — without it every
+		// screen asserts a healthy host, including the ones section 11.1a says
+		// must explain themselves.
+		System:        newSystemAPI(d),
+		SettingsAdmin: newSettingsAPI(ctx, d.settings),
+		Meta:          d,
+		Events:        stream,
+		Fallback:      ui,
+		Conformance:   d.opts.Conformance,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build the API: %w", err)

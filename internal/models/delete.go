@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jlbyh2o/llamaman/internal/events"
 	"github.com/jlbyh2o/llamaman/internal/hf/cache"
 	"github.com/jlbyh2o/llamaman/internal/jobs"
 	"github.com/jlbyh2o/llamaman/internal/model"
@@ -175,6 +176,7 @@ func (s *Service) Delete(ctx context.Context, id string) (DeletePlan, JobRef, er
 	if err != nil {
 		return DeletePlan{}, JobRef{}, err
 	}
+	var sink events.Sink
 
 	// Phase 2: the guard is re-evaluated inside the transaction that acts on
 	// it. The first evaluation is there to answer the user before doing a walk;
@@ -211,7 +213,7 @@ func (s *Service) Delete(ctx context.Context, id string) (DeletePlan, JobRef, er
 			Level: model.LevelInfo, Category: model.CategoryModel, Actor: model.ActorAdmin,
 			Action: "model_deleting", SubjectID: &id, FromState: &from, ToState: &to,
 			Message: "deleting " + m.RepoID + " " + m.PrimaryFile,
-		}); err != nil {
+		}, &sink); err != nil {
 			return err
 		}
 
@@ -223,8 +225,7 @@ func (s *Service) Delete(ctx context.Context, id string) (DeletePlan, JobRef, er
 		return err
 	})
 	if err == nil {
-		s.publish(model.Event{Level: model.LevelInfo, Category: model.CategoryModel,
-			Actor: model.ActorAdmin, Action: "model_deleting", SubjectID: &id})
+		s.publish(&sink)
 	}
 	return plan, ref, err
 }
@@ -327,7 +328,8 @@ func (s *Service) ExecuteDelete(ctx context.Context, id string) (jobs.Outcome, e
 	}
 
 	freed := plan.Bytes
-	return jobs.Succeeded(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
+	sink := &events.Sink{}
+	out := jobs.Succeeded(func(ctx context.Context, tx store.Tx, _ model.JobState) error {
 		now := s.now().UnixMilli()
 		if _, err := s.store.SetLocalModelState(ctx, tx, id, model.ModelDeleted, now); err != nil {
 			return err
@@ -347,8 +349,10 @@ func (s *Service) ExecuteDelete(ctx context.Context, id string) (jobs.Outcome, e
 			Level: model.LevelInfo, Category: model.CategoryModel, Actor: model.ActorSystem,
 			Action: "model_deleted", SubjectID: &id, FromState: &from, ToState: &to,
 			Message: "deleted " + m.RepoID + " " + m.PrimaryFile, DetailJSON: &ds,
-		})
-	}), nil
+		}, sink)
+	})
+	out.AfterCommit = func() { s.publish(sink) }
+	return out, nil
 }
 
 // -----------------------------------------------------------------------------
@@ -373,7 +377,8 @@ func (s *Service) Strays(ctx context.Context, rootID string) ([]model.StrayFile,
 // root that reported it — a `path` column is data, and a delete that followed it
 // anywhere would be a way to make this daemon unlink a file it never scanned.
 func (s *Service) DeleteStray(ctx context.Context, id string, deleteFile bool) error {
-	return s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
+	var sink events.Sink
+	if err := s.store.Write(ctx, func(ctx context.Context, tx store.Tx) error {
 		st, err := s.store.StrayFile(ctx, tx, id)
 		if err != nil {
 			return err
@@ -398,8 +403,12 @@ func (s *Service) DeleteStray(ctx context.Context, id string, deleteFile bool) e
 		return s.appendEvent(ctx, tx, model.Event{
 			Level: model.LevelInfo, Category: model.CategoryModel, Actor: model.ActorAdmin,
 			Action: "stray_removed", Message: "removed the stray record for " + st.Path,
-		})
-	})
+		}, &sink)
+	}); err != nil {
+		return err
+	}
+	s.publish(&sink)
+	return nil
 }
 
 // DismissStray is `POST /api/v1/cache/strays/{id}/dismiss`: the user has seen it
