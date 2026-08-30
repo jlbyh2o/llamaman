@@ -93,7 +93,6 @@ LM_SHA=''
 LM_UPGRADE=0
 LM_ACTUAL_PORT=''
 LM_STEP='starting up'
-LM_LINE=0
 
 # ---------------------------------------------------------------------------
 # Output, failure reporting and the dry-run seam
@@ -107,12 +106,17 @@ lm_die() {
 	exit 1
 }
 
-# lm_at records where we are, so the exit trap can name the failing step and its
-# line instead of leaving a bare non-zero status. POSIX sh has no ERR trap to
-# hang this on, so the position is recorded rather than captured.
+# lm_at records where we are, so the exit trap can name the failing step instead
+# of leaving a bare non-zero status. POSIX sh has no ERR trap to hang this on, so
+# the position is recorded rather than captured.
+#
+# It records a STEP and not a line number: `$LINENO` is a bashism that dash — the
+# `/bin/sh` this script actually meets on Debian and Ubuntu — does not implement,
+# so under `set -u` every reference to it aborted the install before it parsed a
+# single argument. A step name is what the reader needs anyway, and unlike a line
+# number it means the same thing in every shell.
 lm_at() {
-	LM_LINE=$1
-	LM_STEP=$2
+	LM_STEP=$1
 }
 
 # shellcheck disable=SC2329  # invoked indirectly, from main's EXIT trap
@@ -121,7 +125,7 @@ lm_exit_trap() {
 		rm -rf "$LM_TMP"
 	fi
 	if [ "$1" -ne 0 ]; then
-		printf 'llamaman: FAILED at line %s while %s (exit %s)\n' "$LM_LINE" "$LM_STEP" "$1" >&2
+		printf 'llamaman: FAILED while %s (exit %s)\n' "$LM_STEP" "$1" >&2
 	fi
 }
 
@@ -1114,16 +1118,16 @@ lm_uninstall_state() {
 }
 
 lm_uninstall() {
-	lm_at "$LINENO" 'stopping the units'
+	lm_at 'stopping the units'
 	lm_uninstall_stop
 
-	lm_at "$LINENO" 'removing the units, the polkit files and the binary'
+	lm_at 'removing the units, the polkit files and the binary'
 	lm_uninstall_files
 
-	lm_at "$LINENO" 'reloading the service manager'
+	lm_at 'reloading the service manager'
 	lm_uninstall_reload
 
-	lm_at "$LINENO" 'deciding what to do with the state directory'
+	lm_at 'deciding what to do with the state directory'
 	lm_uninstall_state
 
 	lm_say 'uninstalled'
@@ -1138,15 +1142,15 @@ main() {
 	trap 'exit 130' INT
 	trap 'exit 143' TERM
 
-	lm_at "$LINENO" 'parsing arguments'
+	lm_at 'parsing arguments'
 	lm_parse_args "$@"
 	lm_validate_args
 
-	lm_at "$LINENO" 'checking preconditions'
+	lm_at 'checking preconditions'
 	lm_require_root "$@"
 	lm_require_systemd
 
-	lm_at "$LINENO" 'resolving the service identity'
+	lm_at 'resolving the service identity'
 	lm_resolve_identity
 	lm_resolve_topology
 
@@ -1158,45 +1162,45 @@ main() {
 	lm_detect_arch
 	lm_detect_tools
 
-	lm_at "$LINENO" 'preparing a temporary directory'
+	lm_at 'preparing a temporary directory'
 	LM_TMP=$(mktemp -d 2>/dev/null || mktemp -d -t llamaman.XXXXXX)
 	[ -n "$LM_TMP" ] || lm_die 'could not create a temporary directory'
 	chmod 0700 "$LM_TMP"
 
-	lm_at "$LINENO" 'downloading and verifying the release'
+	lm_at 'downloading and verifying the release'
 	if [ "$LM_VERSION" = local ]; then
 		lm_stage_local
 	else
 		lm_stage_release
 	fi
 
-	lm_at "$LINENO" 'installing the binary'
+	lm_at 'installing the binary'
 	lm_install_binary
 
-	lm_at "$LINENO" 'creating the state directory'
+	lm_at 'creating the state directory'
 	lm_create_state_dir
 	lm_dedicated_cache
 
-	lm_at "$LINENO" 'writing the units and polkit rules'
+	lm_at 'writing the units and polkit rules'
 	lm_install_units
 	lm_reload_manager
 
-	lm_at "$LINENO" 'reporting the toolchain'
+	lm_at 'reporting the toolchain'
 	lm_report_toolchain
 
 	# Step 11's upgrade path and step 9's first start are one decision made once:
 	# a host that already had a binary is restarted, a fresh one is enabled.
-	lm_at "$LINENO" 'starting the daemon'
+	lm_at 'starting the daemon'
 	if [ "$LM_UPGRADE" -eq 1 ]; then
 		lm_restart_service
 	else
 		lm_start_service
 	fi
 
-	lm_at "$LINENO" 'waiting for the daemon'
+	lm_at 'waiting for the daemon'
 	lm_wait_for_daemon || true
 
-	lm_at "$LINENO" 'printing the setup token'
+	lm_at 'printing the setup token'
 	lm_print_setup
 	lm_print_next_steps
 

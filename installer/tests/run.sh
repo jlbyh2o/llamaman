@@ -1054,7 +1054,7 @@ t_install_units_failure_is_fatal_and_located() {
 	run_installer
 	assert_status_nonzero || return 1
 	assert_out 'install-units failed' || return 1
-	assert_out 'FAILED at line' || return 1
+	assert_out 'FAILED while' || return 1
 	assert_out 'writing the units and polkit rules' || return 1
 	assert_no_log systemctl.log 'enable --now' || return 1
 }
