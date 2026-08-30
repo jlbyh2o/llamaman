@@ -247,10 +247,39 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Install dbus-run-session
+      - name: Install systemd and dbus
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dbus systemd
+
+      # A user manager is started BY the system manager, for a user that has a
+      # login session or lingering enabled — it is not a daemon one launches by
+      # hand. Spawning `systemd --user` under `dbus-run-session` exited 1 every
+      # time, and because the readiness probe was `systemctl --user --version`,
+      # which prints the BINARY's version whether or not a manager is listening,
+      # the job sailed past that and let D-Bus try to activate the manager once
+      # per call for the whole suite. Lingering is the supported way to ask for
+      # a manager on a host with no login session, which is exactly what a
+      # runner is; `user@.service` then owns the bus at the well-known path.
+      - name: Start the user manager
+        run: |
+          set -euo pipefail
+          sudo loginctl enable-linger "$(id -un)"
+          bus="/run/user/$(id -u)/bus"
+          for _ in $(seq 1 30); do
+            [ -S "$bus" ] && break
+            sleep 1
+          done
+          if [ ! -S "$bus" ]; then
+            echo "::error::no user bus at $bus after 30s; the user manager did not start"
+            systemctl status "user@$(id -u).service" --no-pager || true
+            journalctl -u "user@$(id -u).service" --no-pager -n 50 || true
+            exit 1
+          fi
+          # Proof the MANAGER answers, not just that the binary exists.
+          XDG_RUNTIME_DIR="/run/user/$(id -u)" \
+          DBUS_SESSION_BUS_ADDRESS="unix:path=$bus" \
+            systemctl --user show --property=Version --value
 
       - name: Run the suite under a user manager
         env:
@@ -259,33 +288,9 @@ jobs:
           set -euo pipefail
           XDG_RUNTIME_DIR="/run/user/$(id -u)"
           export XDG_RUNTIME_DIR
-          sudo mkdir -p "$XDG_RUNTIME_DIR"
-          sudo chown "$(id -u):$(id -g)" "$XDG_RUNTIME_DIR"
-          sudo chmod 0700 "$XDG_RUNTIME_DIR"
-
-          SYSTEMD_BIN=/usr/lib/systemd/systemd
-          [ -x "$SYSTEMD_BIN" ] || SYSTEMD_BIN=/lib/systemd/systemd
-          export SYSTEMD_BIN
-
-          # A file rather than `bash -c "…"`: the body needs $-expansion at run
-          # time and none at workflow-expansion time, and nesting three levels of
-          # quoting to say that is how a CI script acquires a bug nobody can see.
-          cat > "$RUNNER_TEMP/run-suite.sh" <<'SCRIPT'
-          set -euo pipefail
-          "$SYSTEMD_BIN" --user --unit=basic.target &
-          manager=$!
-          for _ in $(seq 1 30); do
-            if systemctl --user show --property=Version >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          systemctl --user --version | sed -n 1p
-          status=0
-          go test -race -v ./internal/systemd/... 2>&1 | tee "$SUITE_LOG" || status=$?
-          kill "$manager" 2>/dev/null || true
-          exit "$status"
-          SCRIPT
-
-          dbus-run-session -- bash "$RUNNER_TEMP/run-suite.sh"
+          DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+          export DBUS_SESSION_BUS_ADDRESS
+          go test -race -v ./internal/systemd/... 2>&1 | tee "$SUITE_LOG"
 
       # A skipped integration test is the failure mode this job exists to catch:
       # it means the manager never came up and the suite quietly proved nothing.
